@@ -1,0 +1,24 @@
+{
+  "name": "find-in-images",
+  "version": "1.0.0",
+  "description": "A Chrome extension that makes **scanned PDFs and image-based documents searchable using native Ctrl+F** by applying OCR and injecting a hidden text layer into the DOM.",
+  "main": "content.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/suhani-pandey/FindInImages.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/suhani-pandey/FindInImages/issues"
+  },
+  "homepage": "https://github.com/suhani-pandey/FindInImages#readme",
+  "dependencies": {
+    "pdfjs-dist": "^6.0.227"
+  }
+}

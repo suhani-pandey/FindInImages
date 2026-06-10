@@ -6,7 +6,8 @@
 
   "permissions": [
     "storage",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
 
   "host_permissions": [
@@ -14,8 +15,7 @@
   ],
 
   "background": {
-    "service_worker": "service-worker.js",
-    "type": "module"
+    "service_worker": "service-worker.js"
   },
 
   "content_scripts": [
@@ -26,19 +26,9 @@
     }
   ],
 
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "ruleset_pdf",
-        "enabled": true,
-        "path": "rules/pdf_redirect.json"
-      }
-    ]
-  },
-
   "web_accessible_resources": [
     {
-      "resources": ["viewer/viewer.html", "viewer/*"],
+      "resources": ["viewer/viewer.html", "viewer/*", "lib/pdfjs/*"],
       "matches": ["<all_urls>"]
     }
   ],
