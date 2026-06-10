@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Find in Images",
+  "version": "1.0.0",
+  "description": "Makes scanned PDFs and image-based documents searchable using Ctrl+F via OCR and DOM text injection.",
+
+  "permissions": [
+    "storage",
+    "declarativeNetRequest"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_pdf",
+        "enabled": true,
+        "path": "rules/pdf_redirect.json"
+      }
+    ]
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["viewer/viewer.html", "viewer/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "action": {
+    "default_title": "Find in Images"
+  }
+}
