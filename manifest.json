@@ -28,12 +28,16 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["viewer/viewer.html", "viewer/*", "lib/pdfjs/*"],
+      "resources": ["viewer/viewer.html", "viewer/*", "lib/pdfjs/*", "lib/tesseract/*", "lib/tesseract/lang/*"],
       "matches": ["<all_urls>"]
     }
   ],
 
   "action": {
     "default_title": "Find in Images"
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
 }

@@ -37,6 +37,29 @@
       color: #aaa;
     }
 
+    #lang-label { font-size: 12px; opacity: 0.7; }
+
+    #lang-select {
+      background: #3a3a3a;
+      color: #ddd;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    #reprocess {
+      background: #3a3a3a;
+      color: #ddd;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #reprocess:hover { background: #4a4a4a; }
+
     #viewer-container {
       margin-top: 20px;
       display: flex;
@@ -45,6 +68,9 @@
       gap: 16px;
       padding-bottom: 40px;
       width: 100%;
+      max-width: 1200px;
+      padding-left: 20px;
+      padding-right: 20px;
     }
 
     .page-wrapper {
@@ -54,18 +80,20 @@
 
     .page-wrapper canvas {
       display: block;
+      width: 100%;
+      height: auto;
     }
 
-    /* Text layer sits on top of canvas, invisible but selectable */
+    /* Text layer: invisible spans for Ctrl+F. Must NOT use overflow:hidden —
+       Chrome's Find skips text clipped outside the scroll viewport. */
     .text-layer {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      overflow: hidden;
+      overflow: visible;
       pointer-events: none;
-      user-select: text;
     }
 
     .text-layer span {
@@ -74,6 +102,9 @@
       white-space: pre;
       cursor: text;
       transform-origin: 0% 0%;
+      /* Ensure Chrome's Find sees the element */
+      user-select: text;
+      -webkit-user-select: text;
     }
   </style>
 </head>
@@ -81,10 +112,20 @@
   <div id="toolbar">
     <span>Find in Images — PDF Viewer</span>
     <span id="status">Loading...</span>
+    <span id="lang-label">OCR language:</span>
+    <select id="lang-select" title="OCR language — changing this reprocesses the document">
+      <option value="eng">English</option>
+      <option value="dan">Danish</option>
+      <option value="eng+dan">English + Danish</option>
+    </select>
+    <button id="reprocess" title="Clear cached OCR for all documents and reload">Clear cache</button>
   </div>
 
   <div id="viewer-container"></div>
 
+  <!-- Load Tesseract as a regular script so it creates a reliable window.Tesseract global.
+       Dynamic ESM imports of bundled files can be blocked by MV3 CSP. -->
+  <script src="../lib/tesseract/tesseract.min.js"></script>
   <script type="module" src="viewer.js"></script>
 </body>
 </html>

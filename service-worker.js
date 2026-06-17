@@ -18,8 +18,9 @@ chrome.runtime.onInstalled.addListener(async () => {
           },
         },
         condition: {
-          // Match http/https URLs ending in .pdf (with optional query string)
-          regexFilter: "^https?://.*\\.pdf(\\?.*)?$",
+          // Match http, https, and file URLs ending in .pdf
+          // file:// interception also requires "Allow access to file URLs" in chrome://extensions
+          regexFilter: "^(https?|file)://.*\\.pdf(\\?.*)?$",
           resourceTypes: ["main_frame", "sub_frame"],
         },
       },
