@@ -11,9 +11,10 @@
  * Output words: [{ text, bbox }]               (filtered, trimmed, +variants)
  */
 
-// Words below this OCR confidence are usually noise (stray marks misread as
-// characters). Dropping them reduces false Ctrl+F matches. Tunable.
-const DEFAULT_MIN_CONFIDENCE = 30;
+// Minimum OCR confidence to keep a word. Findability is the priority here, so we
+// keep almost everything (a low floor only drops near-zero garbage). Raising this
+// would trade recall (missing faint/small image text) for fewer false matches.
+const DEFAULT_MIN_CONFIDENCE = 1;
 
 // Most-common digit→letter OCR confusions. Applied only to word-like tokens so
 // real numbers (years, codes) are left alone.

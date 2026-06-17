@@ -313,6 +313,103 @@ function pageScaleFor(page) {
   return containerWidth > 0 ? Math.min(2.0, containerWidth / natural.width) : 1.5;
 }
 
+// Render an offscreen, high-resolution canvas purely for OCR. We target ~3000px
+// on the long edge (~360 DPI for a Letter page) so small text inside images is
+// legible to Tesseract, independent of the on-screen display size.
+const OCR_TARGET_WIDTH = 3000;
+async function renderOCRCanvas(page) {
+  const natural = page.getViewport({ scale: 1.0 });
+  const scale = Math.max(2, Math.min(5, OCR_TARGET_WIDTH / natural.width));
+  const vp = page.getViewport({ scale });
+
+  const canvas = document.createElement("canvas"); // not attached to the DOM
+  canvas.width  = Math.floor(vp.width);
+  canvas.height = Math.floor(vp.height);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+  preprocessForOCR(ctx, canvas.width, canvas.height);
+  return canvas;
+}
+
+// Targeted preprocessing for the two hardest OCR cases:
+//   • low-contrast text → percentile contrast stretch (auto-levels)
+//   • blurry text       → unsharp mask (re-sharpen glyph edges)
+// Operates in grayscale; lets Tesseract do its own binarization afterward.
+function preprocessForOCR(ctx, w, h) {
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const n = w * h;
+
+  // 1. Grayscale + luminance histogram
+  const gray = new Uint8ClampedArray(n);
+  const hist = new Uint32Array(256);
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+    gray[p] = g;
+    hist[g]++;
+  }
+
+  // 2. Contrast stretch between the 2nd and 98th percentiles (ignore outliers).
+  //    Low-contrast pages get pushed toward full black/white; already-punchy
+  //    pages are left essentially unchanged.
+  const lo = histPercentile(hist, n, 0.02);
+  const hi = histPercentile(hist, n, 0.98);
+  const range = Math.max(1, hi - lo);
+  const lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) lut[v] = ((v - lo) * 255) / range;
+  for (let p = 0; p < n; p++) gray[p] = lut[gray[p]];
+
+  // 3. Unsharp mask: sharp = gray + amount * (gray - blurred)
+  const blurred = boxBlur(gray, w, h, 2);
+  const amount = 1.0;
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const v = gray[p] + amount * (gray[p] - blurred[p]);
+    d[i] = d[i + 1] = d[i + 2] = v < 0 ? 0 : v > 255 ? 255 : v;
+  }
+
+  ctx.putImageData(img, 0, 0);
+}
+
+// Value at which the cumulative histogram reaches `frac` of all pixels.
+function histPercentile(hist, total, frac) {
+  const target = total * frac;
+  let cum = 0;
+  for (let v = 0; v < 256; v++) {
+    cum += hist[v];
+    if (cum >= target) return v;
+  }
+  return 255;
+}
+
+// Separable box blur with a sliding-window sum — O(n) per pass, independent of
+// radius. Edges clamp to the nearest pixel.
+function boxBlur(src, w, h, r) {
+  const win = r * 2 + 1;
+  const tmp = new Uint8ClampedArray(src.length);
+  const out = new Uint8ClampedArray(src.length);
+  for (let y = 0; y < h; y++) {            // horizontal
+    const row = y * w;
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += src[row + clampIndex(k, w)];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = (sum / win) | 0;
+      sum += src[row + clampIndex(x + r + 1, w)] - src[row + clampIndex(x - r, w)];
+    }
+  }
+  for (let x = 0; x < w; x++) {            // vertical
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += tmp[clampIndex(k, h) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = (sum / win) | 0;
+      sum += tmp[clampIndex(y + r + 1, h) * w + x] - tmp[clampIndex(y - r, h) * w + x];
+    }
+  }
+  return out;
+}
+
+function clampIndex(v, max) { return v < 0 ? 0 : v >= max ? max - 1 : v; }
+
 // Render pages as their placeholders approach the viewport
 function onPageVisible(entries) {
   for (const entry of entries) {
@@ -386,16 +483,19 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
   // 1. Inject native PDF text (accurate, fast). Returns boxes for dedup.
   const pdfBoxes = injectPDFTextLayer(textLayerDiv, textContent, viewport);
 
-  // 2. Does the page paint any images that might contain text?
+  // 2. Decide whether to OCR. OCR when the page paints images (may contain text),
+  //    OR when it has no extractable text at all — that page could be a scan or
+  //    text converted to vector outlines, both invisible to getTextContent().
   const hasImages = await pageHasImages(page);
+  const shouldOCR = hasImages || pdfBoxes.length === 0;
 
   console.log(
-    `[FindInImages] Page ${pageNum}: ${pdfBoxes.length} PDF text items, hasImages=${hasImages}`
+    `[FindInImages] Page ${pageNum}: ${pdfBoxes.length} PDF text items, hasImages=${hasImages}, OCR=${shouldOCR}`
   );
 
-  // 3. Pure text page with no images — nothing more to do.
-  if (!hasImages) {
-    updateStatus(pageNum, total, pdfBoxes.length > 0 ? "text" : "ocr-empty");
+  // 3. Normal text page with no images — nothing to OCR.
+  if (!shouldOCR) {
+    updateStatus(pageNum, total, "text");
     return;
   }
 
@@ -407,17 +507,27 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
     console.log(`[FindInImages] Page ${pageNum}: cache hit (${normWords.length} words)`);
   } else {
     updateStatus(pageNum, total, "ocr-start");
-    const rawWords = await runOCR(canvas, pageNum); // absolute canvas-pixel coords
+
+    // Render a dedicated HIGH-RESOLUTION canvas for OCR. The display canvas is
+    // sized to the window and is often too low-res for small text inside images;
+    // OCR needs ~300 DPI to read reliably. This canvas is offscreen and discarded
+    // right after recognition to free memory.
+    const ocrCanvas = await renderOCRCanvas(page);
+    const ocrW = ocrCanvas.width, ocrH = ocrCanvas.height;
+    const rawWords = await runOCR(ocrCanvas, pageNum);
+    ocrCanvas.width = ocrCanvas.height = 0; // release the large backing store
+
     if (!rawWords) {
       updateStatus(pageNum, total, pdfBoxes.length > 0 ? "text" : "ocr-empty");
       return;
     }
-    // Clean up OCR output and add correction variants before caching
+    // Clean up OCR output and add correction variants before caching.
+    // Coords normalized against the OCR canvas so they're resolution-independent.
     const words = postProcessWords(rawWords);
-    normWords = normalizeWords(words, canvas.width, canvas.height);
+    normWords = normalizeWords(words, ocrW, ocrH);
     await setCachedPage(cacheDocId, pageNum, normWords);
     console.log(
-      `[FindInImages] Page ${pageNum}: OCR ${rawWords.length} raw → ${words.length} after post-processing (cached)`
+      `[FindInImages] Page ${pageNum}: OCR ${rawWords.length} raw → ${words.length} words @ ${ocrW}px wide (cached)`
     );
   }
 
@@ -482,16 +592,24 @@ function getOCRScheduler() {
     console.log(`[FindInImages] Starting OCR scheduler: ${OCR_WORKERS} worker(s), lang=${OCR_LANG}`);
     const scheduler = window.Tesseract.createScheduler();
 
+    // Sparse-text page segmentation: "find as much text as possible, in no
+    // particular order." Far better than the default layout analysis at picking
+    // up table cells, captions, and scattered small text.
+    const PSM = window.Tesseract.PSM;
+    const sparse = (PSM && PSM.SPARSE_TEXT) || "11";
+
     // Spin up all workers in parallel so total init ≈ one worker's load time
     const workers = await Promise.all(
-      Array.from({ length: OCR_WORKERS }, () =>
-        window.Tesseract.createWorker(OCR_LANG, 1, {
+      Array.from({ length: OCR_WORKERS }, async () => {
+        const w = await window.Tesseract.createWorker(OCR_LANG, 1, {
           workerPath: TESSERACT_WORKER_PATH,
           corePath:   TESSERACT_CORE_PATH,
           langPath:   TESSERACT_LANG_PATH, // bundled traineddata — no CDN
           workerBlobURL: false,
-        })
-      )
+        });
+        await w.setParameters({ tessedit_pageseg_mode: sparse });
+        return w;
+      })
     );
     workers.forEach((w) => scheduler.addWorker(w));
 

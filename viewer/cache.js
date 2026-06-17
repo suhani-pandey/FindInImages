@@ -14,7 +14,11 @@
 const DB_NAME    = "find-in-images";
 const DB_VERSION = 1;
 const STORE      = "ocr-pages";
-const FORMAT_VER = 1;
+// Bump when the OCR pipeline changes so stale results are re-computed.
+// v2: high-resolution OCR canvas + keep-low-confidence words.
+// v3: sparse-text segmentation (tables) + 3000px render + contrast preprocessing.
+// v4: stronger preprocessing — percentile contrast stretch + unsharp mask.
+const FORMAT_VER = 4;
 
 let _dbPromise = null;
 
