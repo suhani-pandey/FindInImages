@@ -26,7 +26,10 @@ export function injectPDFTextLayer(textLayerDiv, textContent, viewport) {
   textLayerDiv.innerHTML = "";
   const boxes = [];
   const vt = viewport.transform; // device-space matrix (already includes page rotation)
+  const entries = [];
+  const frag = document.createDocumentFragment();
 
+  // ── Pass 1: create each span at its position, sized by font height only ──────
   for (const item of textContent.items) {
     if (!item.str || !item.str.trim()) continue;
 
@@ -35,12 +38,12 @@ export function injectPDFTextLayer(textLayerDiv, textContent, viewport) {
     // pages and rotated text align correctly — angle falls out of the matrix.
     const tx = matMul(vt, item.transform);
 
-    const angle      = Math.atan2(tx[1], tx[0]);          // text baseline angle
+    const angle      = Math.atan2(tx[1], tx[0]);              // text baseline angle
     const fontHeight = Math.max(1, Math.hypot(tx[2], tx[3])); // device-space height
-    const fontAscent = fontHeight * 0.8;                  // approx ascent above baseline
+    const fontAscent = fontHeight * 0.8;                      // approx ascent above baseline
     // Rotation preserves lengths and the viewport scale is uniform, so the
     // device-space run width is simply the PDF-space width times the scale.
-    const width      = item.width * viewport.scale;
+    const targetWidth = Math.abs(item.width) * viewport.scale;
 
     // Move from baseline origin to the span's top-left, along the text's angle
     let left, top;
@@ -53,25 +56,40 @@ export function injectPDFTextLayer(textLayerDiv, textContent, viewport) {
     }
 
     const span = document.createElement("span");
-    span.textContent = item.str + " ";
+    span.textContent = item.str; // no trailing space yet — measured below
+    span.style.left     = `${left}px`;
+    span.style.top      = `${top}px`;
+    span.style.fontSize = `${fontHeight}px`;
+    frag.appendChild(span);
 
-    // Horizontal stretch to approximate the original glyph run width
-    const charWidth = fontHeight * 0.6;
-    const scaleX = (width > 0 && charWidth > 0) ? width / (charWidth * span.textContent.length) : 1;
-    const sx = isFinite(scaleX) && scaleX > 0 ? scaleX : 1;
+    entries.push({ span, str: item.str, angle, left, top, fontHeight, targetWidth });
+  }
 
-    span.style.left      = `${left}px`;
-    span.style.top       = `${top}px`;
-    span.style.fontSize  = `${fontHeight}px`;
-    // Rotate first (around top-left origin set in CSS), then stretch horizontally
-    span.style.transform = angle === 0
-      ? `scaleX(${sx})`
-      : `rotate(${angle}rad) scaleX(${sx})`;
+  textLayerDiv.appendChild(frag); // single DOM insertion
 
-    textLayerDiv.appendChild(span);
+  // ── Pass 2 (read): measure each span's natural rendered width (one layout) ───
+  for (const e of entries) {
+    e.measured = e.span.offsetWidth || 1;
+  }
 
-    // Axis-aligned box for dedup (good enough; rotated text is the rare case)
-    boxes.push({ x: left, y: top, w: width || fontHeight, h: fontHeight, text: normalizeText(item.str) });
+  // ── Pass 3 (write): scale each span to EXACTLY the run's device width, so the
+  //    invisible glyphs line up with the canvas. Measuring (not estimating) is
+  //    what makes selection and Find land on the right characters. The trailing
+  //    space is added after measuring so it doesn't skew the scale. ────────────
+  for (const e of entries) {
+    const sx = e.targetWidth > 0 ? e.targetWidth / e.measured : 1;
+    const scaleX = isFinite(sx) && sx > 0 ? sx : 1;
+
+    e.span.style.transform = e.angle === 0
+      ? `scaleX(${scaleX})`
+      : `rotate(${e.angle}rad) scaleX(${scaleX})`;
+    e.span.textContent = e.str + " "; // word break for copy; str keeps its exact scale
+
+    boxes.push({
+      x: e.left, y: e.top,
+      w: e.targetWidth || e.fontHeight, h: e.fontHeight,
+      text: normalizeText(e.str),
+    });
   }
 
   return boxes;
@@ -99,27 +117,44 @@ function normalizeText(s) {
  * Does NOT clear the layer — it runs after injectPDFTextLayer so both coexist.
  *
  * @param {HTMLDivElement} textLayerDiv
- * @param {Array<{text: string, bbox: {x0,y0,x1,y1}}>} words
+ * @param {Array<{text: string, bbox: {x0,y0,x1,y1}, variant?: boolean}>} words
  */
 export function appendOCRTextLayer(textLayerDiv, words) {
+  const entries = [];
+  const frag = document.createDocumentFragment();
+
+  // Pass 1: create a span per word, sized by its box height
   for (const word of words) {
     if (!word.text || !word.text.trim()) continue;
 
     const { x0, y0, x1, y1 } = word.bbox;
     const width  = x1 - x0;
     const height = y1 - y0;
-
     if (width <= 0 || height <= 0) continue;
 
     const span = document.createElement("span");
-    span.textContent = word.text + " ";
-    span.style.left      = `${x0}px`;
-    span.style.top       = `${y0}px`;
-    span.style.width     = `${width}px`;
-    span.style.height    = `${height}px`;
-    span.style.fontSize  = `${Math.max(1, height * 0.9)}px`;
+    span.textContent = word.text; // measured below; trailing space added after
+    span.style.left     = `${x0}px`;
+    span.style.top      = `${y0}px`;
+    span.style.fontSize = `${Math.max(1, height)}px`;
+    // Search-only correction variants are excluded from selection/copy via CSS
+    if (word.variant) span.className = "variant";
+    frag.appendChild(span);
 
-    textLayerDiv.appendChild(span);
+    entries.push({ span, text: word.text, width });
+  }
+
+  textLayerDiv.appendChild(frag);
+
+  // Pass 2 (read): measure natural widths in one layout pass
+  for (const e of entries) e.measured = e.span.offsetWidth || 1;
+
+  // Pass 3 (write): scale each word to exactly fill its OCR box width so the
+  // invisible text overlays the visible word — selection and Find stay aligned.
+  for (const e of entries) {
+    const sx = e.width > 0 ? e.width / e.measured : 1;
+    e.span.style.transform = `scaleX(${isFinite(sx) && sx > 0 ? sx : 1})`;
+    e.span.textContent = e.text + " ";
   }
 }
 

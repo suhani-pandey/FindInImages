@@ -38,13 +38,14 @@ export function postProcessWords(words, { minConfidence = DEFAULT_MIN_CONFIDENCE
     const text = trimNoise(w.text);
     if (!text) continue;
 
-    // 3. Keep the raw (trimmed) word
+    // 3. Keep the raw (trimmed) word — this is the selectable/copyable one
     out.push({ text, bbox: w.bbox });
 
-    // 4. Add a digit→letter corrected variant for likely-misread words
+    // 4. Add a digit→letter corrected variant for likely-misread words.
+    //    Marked variant:true so it's search-only (not selectable/copyable).
     const variant = correctionVariant(text);
     if (variant && variant !== text) {
-      out.push({ text: variant, bbox: w.bbox });
+      out.push({ text: variant, bbox: w.bbox, variant: true });
     }
   }
 

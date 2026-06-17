@@ -52,6 +52,151 @@ reprocessBtn.addEventListener("click", async () => {
   location.reload();
 });
 
+// ── Custom find bar ──────────────────────────────────────────────────────────
+// We override Ctrl/Cmd+F with our own find UI. Native Find makes the invisible
+// text-layer visible in a mismatched font (looks like oversized doubled text);
+// instead we draw translucent highlight boxes over matches and provide ↑/↓ nav.
+const findBar    = document.getElementById("find-bar");
+const findInput  = document.getElementById("find-input");
+const findCount  = document.getElementById("find-count");
+const findPrev   = document.getElementById("find-prev");
+const findNext   = document.getElementById("find-next");
+const findClose  = document.getElementById("find-close");
+
+let findMatches = []; // [{ boxes: HTMLElement[] }]  in document order
+let findActive  = -1;
+let findQuery   = "";
+let findRefreshTimer = null;
+
+function openFindBar() {
+  findBar.hidden = false;
+  findInput.focus();
+  findInput.select();
+  if (findInput.value.trim()) runFind(findInput.value);
+}
+
+function closeFindBar() {
+  findBar.hidden = true;
+  clearFindHighlights();
+  findQuery = "";
+}
+
+function clearFindHighlights() {
+  for (const m of findMatches) for (const b of m.boxes) b.remove();
+  findMatches = [];
+  findActive = -1;
+  findCount.textContent = "0/0";
+}
+
+// Build highlight boxes for every occurrence of the query across rendered pages.
+// keepIndex/scroll let lazy-load refreshes preserve the user's current match.
+function runFind(query, keepIndex = 0, scroll = true) {
+  clearFindHighlights();
+  findQuery = query.trim().toLowerCase();
+  if (!findQuery) return;
+
+  const spans = container.querySelectorAll(".text-layer span");
+  for (const span of spans) {
+    const node = span.firstChild;
+    if (!node || node.nodeType !== Node.TEXT_NODE) continue;
+
+    const text = node.textContent.toLowerCase();
+    let from = 0, idx;
+    while ((idx = text.indexOf(findQuery, from)) !== -1) {
+      const wrapper = span.closest(".page-wrapper");
+      if (wrapper) {
+        const range = document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + findQuery.length);
+
+        const wr = wrapper.getBoundingClientRect();
+        const boxes = [];
+        for (const r of range.getClientRects()) {
+          if (r.width <= 0 || r.height <= 0) continue;
+          const box = document.createElement("div");
+          box.className = "find-highlight";
+          box.style.left   = `${r.left - wr.left}px`;
+          box.style.top    = `${r.top  - wr.top}px`;
+          box.style.width  = `${r.width}px`;
+          box.style.height = `${r.height}px`;
+          wrapper.appendChild(box);
+          boxes.push(box);
+        }
+        if (boxes.length) findMatches.push({ boxes });
+      }
+      from = idx + findQuery.length;
+    }
+  }
+
+  if (findMatches.length) {
+    setActiveMatch(Math.min(Math.max(keepIndex, 0), findMatches.length - 1), scroll);
+  } else {
+    findCount.textContent = "0/0";
+  }
+}
+
+function setActiveMatch(i, scroll = true) {
+  if (!findMatches.length) return;
+  if (findActive >= 0 && findMatches[findActive]) {
+    for (const b of findMatches[findActive].boxes) b.classList.remove("active");
+  }
+  findActive = (i + findMatches.length) % findMatches.length;
+  const m = findMatches[findActive];
+  for (const b of m.boxes) b.classList.add("active");
+  if (scroll) m.boxes[0].scrollIntoView({ block: "center", behavior: "smooth" });
+  findCount.textContent = `${findActive + 1}/${findMatches.length}`;
+}
+
+// Re-run the active search after a page lazily finishes indexing. New pages are
+// later in the DOM, so existing match indices stay stable — we keep the active
+// match and don't scroll. Debounced to coalesce bursts of page completions.
+function scheduleFindRefresh() {
+  if (findBar.hidden || !findQuery) return;
+  clearTimeout(findRefreshTimer);
+  findRefreshTimer = setTimeout(() => runFind(findInput.value, findActive, false), 250);
+}
+
+findInput.addEventListener("input", () => runFind(findInput.value));
+findNext.addEventListener("click", () => setActiveMatch(findActive + 1));
+findPrev.addEventListener("click", () => setActiveMatch(findActive - 1));
+findClose.addEventListener("click", closeFindBar);
+
+// Clicking a nav button shouldn't steal focus from the input (keeps typing/keys working)
+findNext.addEventListener("mousedown", (e) => e.preventDefault());
+findPrev.addEventListener("mousedown", (e) => e.preventDefault());
+
+window.addEventListener("keydown", (e) => {
+  // Ctrl/Cmd+F opens the find bar from anywhere
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    openFindBar();
+    return;
+  }
+
+  // The remaining shortcuts only apply while the find bar is open
+  if (findBar.hidden) return;
+
+  switch (e.key) {
+    case "Escape":
+      e.preventDefault();
+      closeFindBar();
+      break;
+    case "Enter":   // Enter / Shift+Enter
+    case "F3":      // F3 / Shift+F3
+      e.preventDefault();
+      if (findMatches.length) setActiveMatch(findActive + (e.shiftKey ? -1 : 1));
+      break;
+    case "ArrowDown":
+      e.preventDefault();
+      if (findMatches.length) setActiveMatch(findActive + 1);
+      break;
+    case "ArrowUp":
+      e.preventDefault();
+      if (findMatches.length) setActiveMatch(findActive - 1);
+      break;
+  }
+});
+
 // ── Resolve PDF URL ──────────────────────────────────────────────────────────
 // URLSearchParams.get() already percent-decodes the value, which gives us
 // a string with literal spaces — valid for display but not for fetch().
@@ -126,31 +271,39 @@ async function loadPDF(url) {
 }
 
 // Process every page in the background so Ctrl+F covers the whole document.
-// Uses requestIdleCallback so it yields to scrolling and on-demand renders.
+// Runs up to OCR_WORKERS pages concurrently to keep all scheduler workers busy,
+// and yields via requestIdleCallback so scrolling / on-demand renders stay snappy.
 function startBackgroundIndexing(total) {
   const idle = (fn) =>
-    window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 60);
+    window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 30);
 
   let next = 1;
-  const step = async () => {
-    while (next <= total && renderedPages.has(next)) next++;
-    if (next > total) {
-      status.textContent = `All ${total} page${total > 1 ? "s" : ""} ready — Ctrl+F to search`;
-      return;
+  let active = 0;
+
+  const pump = () => {
+    while (active < OCR_WORKERS) {
+      while (next <= total && renderedPages.has(next)) next++; // skip already-rendered
+      if (next > total) break;
+
+      const pageNum = next++;
+      const wrapper = container.querySelector(`.page-wrapper[data-page-num="${pageNum}"]`);
+      if (!wrapper) continue;
+
+      active++;
+      renderPage(pageNum, wrapper)
+        .catch((err) => console.error(`[FindInImages] background index error on page ${pageNum}:`, err))
+        .finally(() => {
+          active--;
+          if (next > total && active === 0) {
+            status.textContent = `All ${total} page${total > 1 ? "s" : ""} ready — Ctrl+F to search`;
+          } else {
+            idle(pump);
+          }
+        });
     }
-    const pageNum = next++;
-    const wrapper = container.querySelector(`.page-wrapper[data-page-num="${pageNum}"]`);
-    if (wrapper) {
-      try {
-        await renderPage(pageNum, wrapper);
-      } catch (err) {
-        console.error(`[FindInImages] background index error on page ${pageNum}:`, err);
-      }
-    }
-    idle(step);
   };
 
-  idle(step);
+  idle(pump);
 }
 
 // Fit-to-width scale for a page (capped so small pages don't blow up)
@@ -181,13 +334,22 @@ async function renderPage(pageNum, wrapper) {
   const page = await pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale: pageScaleFor(page) });
 
-  // Correct the placeholder to the page's real dimensions
+  // Render at the device pixel ratio (capped) so text stays crisp on HiDPI /
+  // Retina screens. Without this the 1× canvas gets upscaled by the browser and
+  // looks like a low-res scan. Layout stays in CSS px; only the backing store grows.
+  const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+
+  // Correct the placeholder to the page's real dimensions (CSS pixels)
   wrapper.style.width  = `${viewport.width}px`;
   wrapper.style.height = `${viewport.height}px`;
 
   const canvas = document.createElement("canvas");
-  canvas.width  = viewport.width;
-  canvas.height = viewport.height;
+  // Backing store is DPR-scaled (more pixels)…
+  canvas.width  = Math.floor(viewport.width  * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
+  // …but it's displayed at CSS (viewport) size, so the browser downsamples → crisp
+  canvas.style.width  = `${viewport.width}px`;
+  canvas.style.height = `${viewport.height}px`;
 
   const textLayerDiv = document.createElement("div");
   textLayerDiv.className = "text-layer";
@@ -196,10 +358,18 @@ async function renderPage(pageNum, wrapper) {
   wrapper.appendChild(canvas);
   wrapper.appendChild(textLayerDiv);
 
-  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  await page.render({
+    canvasContext: canvas.getContext("2d"),
+    viewport,
+    // Scale the drawing to fill the DPR-scaled backing store
+    transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
+  }).promise;
 
   await processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, pdfDoc.numPages)
     .catch((err) => console.error(`[FindInImages] Text layer failed on page ${pageNum}:`, err));
+
+  // Pick up matches on this page if a search is active (debounced)
+  scheduleFindRefresh();
 }
 
 // ── Text detection → PDF text layer AND/OR OCR ───────────────────────────────
@@ -230,7 +400,7 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
   }
 
   // 4. Page has images. Reuse cached OCR if available, else run OCR and store it.
-  //    Cached words are normalized (0..1); denormalize to the current canvas.
+  //    Cached words are normalized (0..1) so they're independent of DPR / scale.
   let normWords = await getCachedPage(cacheDocId, pageNum);
 
   if (normWords) {
@@ -251,8 +421,11 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
     );
   }
 
-  // Denormalize to current canvas, drop true duplicates of native text, inject.
-  const absWords = denormalizeWords(normWords, canvas.width, canvas.height);
+  // Denormalize to the text layer's CSS-pixel space (viewport size), NOT the
+  // canvas backing-store size — the canvas is DPR-scaled but the text layer and
+  // PDF text boxes live in CSS pixels. Using canvas dims here would offset OCR
+  // text by the device pixel ratio.
+  const absWords = denormalizeWords(normWords, viewport.width, viewport.height);
   const newWords = filterOverlappingWords(absWords, pdfBoxes);
   appendOCRTextLayer(textLayerDiv, newWords);
 
@@ -260,9 +433,12 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
 }
 
 // ── Coordinate normalization (for scale-independent caching) ─────────────────
+// The `variant` flag is preserved so search-only words stay non-selectable
+// even when restored from cache.
 function normalizeWords(words, w, h) {
   return words.map((word) => ({
     text: word.text,
+    variant: word.variant,
     bbox: { x0: word.bbox.x0 / w, y0: word.bbox.y0 / h, x1: word.bbox.x1 / w, y1: word.bbox.y1 / h },
   }));
 }
@@ -270,6 +446,7 @@ function normalizeWords(words, w, h) {
 function denormalizeWords(words, w, h) {
   return words.map((word) => ({
     text: word.text,
+    variant: word.variant,
     bbox: { x0: word.bbox.x0 * w, y0: word.bbox.y0 * h, x1: word.bbox.x1 * w, y1: word.bbox.y1 * h },
   }));
 }
@@ -285,43 +462,54 @@ async function pageHasImages(page) {
   }
 }
 
-// ── OCR via Tesseract.js (window.Tesseract set by <script> in viewer.html) ───
-let _tesseractWorker = null;
+// ── OCR via a Tesseract scheduler (parallel workers) ─────────────────────────
+// A scheduler distributes recognize jobs across several workers so multiple
+// pages OCR concurrently. Worker count scales with CPU cores but is capped —
+// each worker loads its own copy of the language model, so more = more memory.
+// We leave one core for the UI/rendering.
+const OCR_WORKERS = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 
-async function getOCRWorker() {
-  if (_tesseractWorker) return _tesseractWorker;
+let _schedulerPromise = null;
 
-  if (!window.Tesseract) {
-    throw new Error("Tesseract not loaded — check that tesseract.min.js is in lib/tesseract/");
-  }
+function getOCRScheduler() {
+  if (_schedulerPromise) return _schedulerPromise;
 
-  console.log(`[FindInImages] Initialising Tesseract worker (lang=${OCR_LANG})…`);
-  _tesseractWorker = await window.Tesseract.createWorker(OCR_LANG, 1, {
-    workerPath: TESSERACT_WORKER_PATH,
-    corePath:   TESSERACT_CORE_PATH,
-    langPath:   TESSERACT_LANG_PATH, // bundled traineddata — no CDN
-    workerBlobURL: false,
-    logger: (m) => {
-      if (m.status === "recognizing text") {
-        status.textContent = `OCR … ${Math.round(m.progress * 100)}%`;
-      } else {
-        console.log("[FindInImages] Tesseract:", m.status, m.progress ?? "");
-      }
-    },
-  });
+  _schedulerPromise = (async () => {
+    if (!window.Tesseract) {
+      throw new Error("Tesseract not loaded — check that tesseract.min.js is in lib/tesseract/");
+    }
 
-  console.log("[FindInImages] Tesseract worker ready");
-  return _tesseractWorker;
+    console.log(`[FindInImages] Starting OCR scheduler: ${OCR_WORKERS} worker(s), lang=${OCR_LANG}`);
+    const scheduler = window.Tesseract.createScheduler();
+
+    // Spin up all workers in parallel so total init ≈ one worker's load time
+    const workers = await Promise.all(
+      Array.from({ length: OCR_WORKERS }, () =>
+        window.Tesseract.createWorker(OCR_LANG, 1, {
+          workerPath: TESSERACT_WORKER_PATH,
+          corePath:   TESSERACT_CORE_PATH,
+          langPath:   TESSERACT_LANG_PATH, // bundled traineddata — no CDN
+          workerBlobURL: false,
+        })
+      )
+    );
+    workers.forEach((w) => scheduler.addWorker(w));
+
+    console.log(`[FindInImages] OCR scheduler ready (${scheduler.getNumWorkers()} workers)`);
+    return scheduler;
+  })();
+
+  return _schedulerPromise;
 }
 
 async function runOCR(canvas, pageNum) {
   try {
-    const worker = await getOCRWorker();
-    console.log(`[FindInImages] Page ${pageNum}: running OCR…`);
+    const scheduler = await getOCRScheduler();
+    console.log(`[FindInImages] Page ${pageNum}: queued for OCR…`);
 
     // Tesseract.js v5+ omits detailed results by default — request blocks so we
     // get the block→paragraph→line→word hierarchy with per-word bounding boxes.
-    const { data } = await worker.recognize(canvas, {}, { blocks: true });
+    const { data } = await scheduler.addJob("recognize", canvas, {}, { blocks: true });
 
     return flattenWords(data.blocks);
   } catch (err) {
