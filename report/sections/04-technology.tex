@@ -1,0 +1,136 @@
+\section{Technology Stack and Integration}
+\label{sec:tech}
+
+Every part of \proj{} runs on the client, inside the browser. The system is
+assembled from a small set of web technologies, each chosen for one job, and the
+engineering value is largely in how they are \emph{coordinated}. This section
+catalogues the stack, explains how each piece is used, and then shows how they
+fit together as a single pipeline.
+
+\subsection{The Stack at a Glance}
+Table~\ref{tab:stack} lists each technology, the single job it performs, and the
+file where it is wired into the system; the subsections that follow expand on how
+each one is used.
+
+\begin{table}[ht]
+  \centering
+  \caption{Technologies used in \proj{}, the single role each plays, and the source
+           file where it is wired into the system.}
+  \label{tab:stack}
+  \renewcommand{\arraystretch}{1.3}
+  {\small
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.7cm} X >{\raggedright\arraybackslash}p{2.4cm}@{}}
+    \toprule
+    \textbf{Technology} & \textbf{Role in the project} & \textbf{Where} \\
+    \midrule
+    Chrome Extension (MV3) & Packaging, lifecycle, and the permission/CSP model that lets WASM OCR run & \code{manifest.json} \\
+    Service worker + \code{declarative\allowbreak NetRequest} & Intercepts PDF navigations and redirects them to the custom viewer & \code{service-\allowbreak worker.js} \\
+    PDF.js (\code{pdfjs-dist}) & Parses and renders pages; supplies native text and image-operator info & \code{viewer.js} \\
+    HTML5 Canvas API & Rasterization target --- both the on-screen page and the offscreen OCR image & \code{viewer.js} \\
+    Tesseract.js (WASM) & Optical character recognition on image pages & \code{viewer.js} \\
+    Web Workers + scheduler & Run OCR off the main thread, several pages at once & \code{viewer.js} \\
+    IndexedDB & Persistent, resolution-independent cache of OCR results & \code{cache.js} \\
+    \code{localStorage} & Remembers the chosen OCR language & \code{viewer.js} \\
+    DOM + \code{Range} / \code{Intersection\allowbreak Observer} / \code{request\allowbreak IdleCallback} & Text-layer overlay, find-highlight geometry, lazy render, idle indexing & \code{viewer.js}, \code{text-\allowbreak layer.js} \\
+    \bottomrule
+  \end{tabularx}}
+\end{table}
+
+\subsection{How Each Technology Is Used}
+\begin{description}[leftmargin=1.4em, style=nextline]
+  \item[Chrome Extension (Manifest V3).] The \code{manifest.json} declares the
+        \code{storage} and \code{declarativeNetRequest} permissions, exposes the
+        viewer and bundled libraries as \code{web\_accessible\_resources}, and
+        sets a content security policy of \code{script-src 'self'
+        'wasm-\allowbreak unsafe-\allowbreak eval'} --- the last clause is what
+        permits Tesseract's WebAssembly core to execute inside the extension.
+  \item[Service worker \& \code{declarativeNetRequest}.] On install the service
+        worker registers one \emph{dynamic} redirect rule whose regex matches
+        \code{.pdf} URLs and rewrites them to \code{viewer.html?url=\textbackslash0}.
+        The rule is dynamic (not static) because it must embed the extension's
+        runtime URL, which is unknown until install time.
+  \item[PDF.js.] \code{getDocument(\{url\})} loads the file; per page,
+        \code{getViewport(\{scale\})} sizes it and \code{render()} draws it to a
+        canvas. \code{getTextContent()}
+        yields native text items, and \code{getOperatorList()} (checked against
+        \code{pdfjsLib.OPS} image operators) reveals whether a page paints
+        raster images. The \code{viewport.transform} matrix anchors the
+        coordinate mapping of Section~\ref{sec:design}.
+  \item[Canvas API.] Each page is rendered twice: an on-screen canvas whose
+        backing store is scaled by the device pixel ratio for sharpness, and a
+        separate offscreen canvas targeting $\sim$3000\,px wide for OCR. \code{getImageData}
+        / \code{putImageData} give the preprocessing stage pixel-level access.
+  \item[Tesseract.js.] Loaded as a UMD script that exposes \code{window.Tesseract}.
+        A \code{createScheduler()} fronts a pool of \code{createWorker()} LSTM
+        workers configured with \code{PSM.SPARSE\_TEXT}; an
+        \code{addJob("recognize")} call (with \code{blocks:true}) returns the
+        block\,$\to$\,word hierarchy with bounding boxes. The WASM cores and \code{eng}/\code{dan} language data
+        are bundled locally, so OCR is fully offline. Three language modes are
+        supported: English (\code{eng}), Danish (\code{dan}), and combined
+        English+Danish (\code{eng+dan}).
+  \item[Web Workers \& scheduler.] OCR is CPU-bound, so it never runs on the
+        main thread. The scheduler distributes pages across
+        $\min(4,\,\text{cores}{-}1)$ workers, keeping the UI responsive while
+        several pages recognize in parallel.
+  \item[IndexedDB.] \code{cache.js} stores each page's recognized words under a
+        \code{\$\{docId\}::\$\{pageNum\}} key, with coordinates normalized to the
+        unit square and a \code{FORMAT\_VER} stamp that invalidates results when
+        the pipeline changes.
+  \item[\code{localStorage} \& DOM APIs.] The OCR language is remembered in
+        \code{localStorage}. The recovered text becomes invisible \code{<span>}s;
+        \code{Range.getClientRects()} provides exact geometry for find
+        highlights; \code{IntersectionObserver} triggers lazy rendering; and
+        \code{requestIdleCallback} paces background indexing.
+\end{description}
+
+\subsection{Coordination Between Technologies}
+\code{viewer.js} is the orchestrator: it owns the page lifecycle and brokers
+every hand-off between the libraries. Figure~\ref{fig:integration} traces the
+data that crosses each boundary. A PDF request is rerouted by the service worker;
+PDF.js rasterizes pages to canvas and reports their text and image operators;
+image pages are sent (as a high-resolution canvas) to the Tesseract worker pool,
+which returns words and boxes; those words are normalized and persisted to
+IndexedDB; and finally the orchestrator emits the invisible DOM text layer that
+the find bar searches. Each technology only ever talks to \code{viewer.js},
+which keeps the coupling between them loose and the data contracts explicit.
+
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[
+      font=\small, node distance=10mm and 12mm,
+      tech/.style={rectangle, rounded corners=2pt, draw=accent!70, fill=accent!6,
+                   align=center, minimum height=8mm, inner sep=4pt},
+      hub/.style={rectangle, rounded corners=2pt, draw=accent!90, fill=accent!12,
+                  align=center, minimum height=9mm, inner sep=5pt, font=\small\bfseries},
+      io/.style={rectangle, draw=rulegray, fill=codebg, align=center,
+                 minimum height=7mm, inner sep=4pt},
+      a/.style={-{Stealth[length=2.2mm]}, draw=accent!80, semithick},
+      b/.style={{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]}, draw=accent!80, semithick},
+      lbl/.style={font=\scriptsize\itshape, fill=white, inner sep=1pt},
+    ]
+    \node[io]  (req) {PDF request};
+    \node[tech, right=18mm of req] (sw) {Service worker\\\code{declarativeNetRequest}};
+    \node[hub, below=12mm of sw] (viewer) {\code{viewer.js}\\orchestrator};
+
+    \node[tech, left=of viewer]  (pdfjs) {PDF.js};
+    \node[tech, above=8mm of pdfjs] (canvas) {Canvas};
+    \node[tech, right=of viewer] (tess) {Tesseract.js\\(Web Workers)};
+    \node[tech, below left=12mm and 2mm of viewer] (idb) {IndexedDB\\cache};
+    \node[io,   below=14mm of viewer] (dom) {DOM text layer\\(invisible spans)};
+    \node[io,   below right=14mm and 2mm of viewer] (find) {Find bar};
+
+    \draw[a] (req) -- (sw);
+    \draw[a] (sw) -- node[lbl,right]{redirect \code{?url=}} (viewer);
+    \draw[b] (viewer) -- node[lbl,above,align=center]{render /\\text+ops} (pdfjs);
+    \draw[a] (pdfjs) -- node[lbl,right]{raster} (canvas);
+    \draw[b] (viewer) -- node[lbl,above,align=center]{hi-res canvas /\\words+bbox} (tess);
+    \draw[b] (viewer) -- node[lbl,left]{norm. words} (idb);
+    \draw[a] (viewer) -- node[lbl,right]{positioned spans} (dom);
+    \draw[b] (find) -- node[lbl,right]{query / matches} (dom);
+  \end{tikzpicture}
+  \caption{Integration view. \code{viewer.js} acts as the sole orchestrator ---
+           every library and storage layer communicates only with it, so
+           inter-component coupling stays low. Arrow labels name the data crossing
+           each boundary; double-headed arrows indicate request--response pairs.}
+  \label{fig:integration}
+\end{figure}

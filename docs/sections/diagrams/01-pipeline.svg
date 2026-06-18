@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 600" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+  </defs>
+  <rect x="180" y="10" width="360" height="44" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="360" y="37" text-anchor="middle" fill="#1e3a8a">User opens a <tspan font-family="monospace">.pdf</tspan> link in Chrome</text>
+  <line x1="360" y1="54" x2="360" y2="80" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="180" y="82" width="360" height="44" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="360" y="103" text-anchor="middle" fill="#1e3a8a">Service worker — declarativeNetRequest rule</text>
+  <text x="360" y="118" text-anchor="middle" fill="#64748b" font-size="11">redirects to the bundled viewer, preserving the URL</text>
+  <line x1="360" y1="126" x2="360" y2="152" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="180" y="154" width="360" height="44" rx="9" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+  <text x="360" y="175" text-anchor="middle" fill="#0f172a">Custom viewer (viewer.html + viewer.js)</text>
+  <text x="360" y="190" text-anchor="middle" fill="#64748b" font-size="11">orchestrates the whole pipeline</text>
+  <line x1="360" y1="198" x2="360" y2="224" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="180" y="226" width="360" height="44" rx="9" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="360" y="247" text-anchor="middle" fill="#5b21b6">PDF.js renders each page &#8594; Canvas</text>
+  <text x="360" y="262" text-anchor="middle" fill="#64748b" font-size="11">lazily, fit-to-width, DPR-scaled for crispness</text>
+  <line x1="360" y1="270" x2="360" y2="296" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="200" y="298" width="320" height="46" rx="9" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+  <text x="360" y="319" text-anchor="middle" fill="#0f172a">Detect content: native text? images?</text>
+  <text x="360" y="334" text-anchor="middle" fill="#64748b" font-size="11">getTextContent() + getOperatorList()</text>
+  <line x1="300" y1="344" x2="210" y2="372" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="420" y1="344" x2="510" y2="372" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="60" y="374" width="270" height="48" rx="9" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="195" y="395" text-anchor="middle" fill="#166534">Inject native PDF text</text>
+  <text x="195" y="410" text-anchor="middle" fill="#64748b" font-size="11">accurate &amp; fast — always done</text>
+  <rect x="390" y="374" width="270" height="48" rx="9" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="525" y="395" text-anchor="middle" fill="#115e59">OCR image regions (Tesseract.js)</text>
+  <text x="525" y="410" text-anchor="middle" fill="#64748b" font-size="11">high-res, preprocessed, in workers</text>
+  <line x1="195" y1="422" x2="320" y2="452" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="525" y1="422" x2="400" y2="452" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="180" y="454" width="360" height="48" rx="9" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="360" y="475" text-anchor="middle" fill="#166534">Map coordinates &#8594; invisible DOM text layer</text>
+  <text x="360" y="490" text-anchor="middle" fill="#64748b" font-size="11">dedup overlaps; position spans over the canvas</text>
+  <line x1="360" y1="502" x2="360" y2="528" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="180" y="530" width="360" height="46" rx="9" fill="#eef2ff" stroke="#4338ca" stroke-width="2"/>
+  <text x="360" y="558" text-anchor="middle" fill="#3730a3" font-weight="700">Native browser Ctrl+F searches the page</text>
+</svg>

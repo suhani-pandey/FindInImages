@@ -1,0 +1,86 @@
+\section{Functional Requirements (User Stories)}
+\label{sec:requirements}
+
+Before the architecture, it is worth stating plainly what the system must do for
+its users. \proj{} has essentially one kind of user---anyone viewing a PDF in
+Chrome---and one overriding need: to find and reuse text that is visible on the
+page, whether or not the document stores it as real text. The requirements below
+are written first as user stories, then distilled into functional and
+non-functional requirements that the rest of the report can be traced against.
+
+\subsection{User Stories}
+\begin{itemize}
+  \item \textbf{Find anything visible.} \emph{As a reader of a scanned PDF, I
+        want $\mathrm{Ctrl}{+}\mathrm{F}$ to find words that appear only inside
+        images, so that no visible text is unsearchable.}
+  \item \textbf{Mixed pages.} \emph{As a reader of a page that mixes real text
+        and text baked into images, I want both to be searchable, without a word
+        being matched twice.}
+  \item \textbf{Select and copy.} \emph{As a user, I want to select and copy the
+        recovered text, so that I can quote or reuse it elsewhere.}
+  \item \textbf{Navigate matches.} \emph{As a user, I want to step through
+        matches with $\uparrow/\downarrow$ and see each one clearly highlighted,
+        even on colourful pages.}
+  \item \textbf{Choose the language.} \emph{As a reader of non-English documents,
+        I want to pick the OCR language (English, Danish, or both).}
+  \item \textbf{Large documents stay usable.} \emph{As a user opening a large
+        PDF, I want it to open immediately and stay responsive while it becomes
+        searchable in the background.}
+  \item \textbf{Instant on revisit.} \emph{As a returning user, I want a document
+        I have already opened to be searchable instantly, without re-processing.}
+  \item \textbf{Private and offline.} \emph{As a privacy-conscious user, I want
+        everything to happen on my machine, with no upload and no network
+        dependency.}
+  \item \textbf{Leave my file alone.} \emph{As a user, I want the original PDF
+        displayed unchanged---never rewritten, re-saved, or reformatted.}
+\end{itemize}
+
+\subsection{Functional Requirements}
+Table~\ref{tab:fr} restates the stories as testable functional requirements and
+traces each to the development phase that delivered it
+(Section~\ref{sec:process}).
+
+\begin{table}[ht]
+  \centering
+  \caption{Functional requirements stated as testable conditions, each traced to the
+           development phase that delivered it (Section~\ref{sec:process}).}
+  \label{tab:fr}
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{@{}l X >{\raggedright\arraybackslash}p{2.6cm}@{}}
+    \toprule
+    \textbf{ID} & \textbf{Requirement} & \textbf{Delivered in} \\
+    \midrule
+    FR-1 & Make text inside images findable via the browser's native search & Phases 3, 11 \\
+    FR-2 & Keep native PDF text searchable & Phase 3 \\
+    FR-3 & On mixed pages, expose both native and image text, de-duplicated & Phase 3 \\
+    FR-4 & Allow the recovered text to be selected and copied & Phase 10 \\
+    FR-5 & Provide a find bar with $\uparrow/\downarrow$ navigation and clear highlights & Phase 10 \\
+    FR-6 & Support multiple OCR languages (English, Danish) & Phase 8 \\
+    FR-7 & Align text correctly on rotated pages & Phase 7 \\
+    FR-8 & Open large PDFs immediately and index them in the background & Phase 9 \\
+    FR-9 & Cache results so revisited documents are searchable instantly & Phase 4 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Non-Functional Requirements}
+\begin{table}[ht]
+  \centering
+  \caption{Non-functional requirements --- system-wide qualities that apply
+           regardless of which page or document is being processed --- and the
+           design decisions or phases that realise each one.}
+  \label{tab:nfr}
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{@{}l X >{\raggedright\arraybackslash}p{2.6cm}@{}}
+    \toprule
+    \textbf{ID} & \textbf{Requirement} & \textbf{Realised by} \\
+    \midrule
+    NFR-1 & \textbf{Non-destructive:} the original PDF is never modified --- read-only render plus overlay & Design principle (\S\ref{sec:design}) \\
+    NFR-2 & \textbf{Offline \& private:} no network at runtime; bundled OCR engine and models & Phase 5 \\
+    NFR-3 & \textbf{Responsive:} OCR runs off the main thread; the UI never blocks & Phase 9 \\
+    NFR-4 & \textbf{Accurate:} image-text recovery as close to ``fully findable'' as preprocessing allows & Phases 6, 11 \\
+    NFR-5 & \textbf{Resolution-independent:} text stays aligned across zoom and high-DPI displays & \S\ref{sec:design} \\
+    NFR-6 & \textbf{Maintainable cache:} a format version invalidates stale results when the pipeline changes & Phases 4, 11 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

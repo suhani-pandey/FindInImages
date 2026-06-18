@@ -1,0 +1,72 @@
+\section{Background and Related Work}
+\label{sec:background}
+
+\subsection{The Searchable-PDF Problem}
+The PDF format~\cite{pdf32000} can represent text either as encoded glyphs with
+positioning operators or as raster images. Only the former is extractable. A
+``scanned'' PDF is typically a sequence of full-page images with no text
+operators, so any tool relying on the document's text stream---including the
+browser's find feature---sees an empty page. Making such a document searchable
+requires \emph{recovering} the text through OCR and re-associating it with the
+page.
+
+\subsection{Optical Character Recognition}
+OCR converts images of text into character sequences. Tesseract, originally
+developed at HP and later open-sourced by Google, is among the most widely used
+engines; modern versions use an LSTM-based recognizer and report results as a
+hierarchy of blocks, paragraphs, lines, and words, each with a bounding box and a
+confidence score~\cite{smith2007tesseract}. \proj{} uses
+Tesseract.js~\cite{tesseractjs}, a WebAssembly port that runs entirely in the
+browser, which is what makes a fully client-side, offline pipeline possible.
+
+OCR quality is sensitive to input image quality. Low contrast, blur, and low
+resolution all degrade recognition, which motivates the preprocessing stage
+described in Section~\ref{sec:impl}. Classic techniques such as Otsu's
+thresholding~\cite{otsu1979} binarize an image by analyzing its gray-level
+histogram; \proj{} performs a related percentile-based contrast stretch before
+handing the image to Tesseract's own binarizer.
+
+\subsection{In-Browser PDF Rendering with PDF.js}
+PDF.js~\cite{pdfjs} is Mozilla's standards-based PDF renderer written in
+JavaScript. It parses a PDF, exposes each page's content, and rasterizes pages
+to an HTML5 \code{<canvas>}. Crucially it also provides two capabilities this
+project depends on: \code{getTextContent()}, which returns positioned text items
+for pages that \emph{do} have a text layer, and \code{getOperatorList()}, which
+exposes the low-level drawing operators and lets us detect whether a page paints
+raster images. PDF.js also defines a \emph{viewport} abstraction that maps the
+PDF's coordinate system (points, bottom-left origin) into device pixels, which is
+the first link in our coordinate chain.
+
+\subsection{The Chrome Extension Platform (Manifest V3)}
+Manifest~V3~\cite{mv3} is the current Chrome extension architecture. The
+components relevant here are:
+\begin{itemize}
+  \item \textbf{Service worker} --- an event-driven background script (replacing
+        persistent background pages) used here to register network rules on
+        install.
+  \item \textbf{\code{declarativeNetRequest}}~\cite{dnr} --- a declarative API
+        for redirecting or blocking requests without intercepting their contents,
+        used to reroute PDF navigations to the custom viewer.
+  \item \textbf{Content scripts} --- scripts injected into web pages, reserved
+        here for future handling of image text on ordinary pages.
+  \item \textbf{Web-accessible resources} and a \textbf{content security policy}
+        permitting \code{wasm-\allowbreak unsafe-\allowbreak eval}, required so the bundled
+        WebAssembly OCR core can execute.
+\end{itemize}
+
+\subsection{Client-Side Storage}
+Because OCR is computationally expensive, recovered text is cached in
+IndexedDB~\cite{indexeddb}, a transactional, asynchronous, origin-scoped
+key--value store suited to structured data. Caching is what turns a slow first
+read into an instant subsequent one.
+
+\subsection{Positioning Relative to Existing Approaches}
+Server-side services (e.g.\ commercial PDF tools and the open-source
+\code{ocrmypdf}) produce a new searchable PDF but require an upload and a
+round-trip, and they replace the user's in-browser reading flow. Browser-native
+PDF viewers render scanned PDFs but cannot search them. \proj{} occupies the gap
+between these: it keeps the live, in-browser experience while adding searchability
+locally and privately, and it reuses the browser's own search rather than
+shipping a new one. The trade-off is that recognition runs on the client's CPU;
+the architecture in Section~\ref{sec:design} is largely a response to making that
+trade-off acceptable.

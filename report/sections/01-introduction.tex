@@ -1,0 +1,65 @@
+\section{Introduction}
+\label{sec:intro}
+
+\subsection{Motivation}
+Documents on the web fall broadly into two categories. \emph{Text-based} PDFs
+embed their characters as selectable, searchable glyphs and work seamlessly with
+the browser's built-in find feature. \emph{Image-based} documents---scanned
+pages, photographs of text, screenshots, and PDFs whose text has been flattened
+into raster images---contain no machine-readable text at all. To the browser
+they are pictures. Pressing $\mathrm{Ctrl}{+}\mathrm{F}$ on such a document finds
+nothing, even though the text is plainly visible to a human reader.
+
+This is a pervasive friction point. A student searching a scanned textbook, a
+researcher scanning archival material, or anyone working with a faxed or
+photographed form repeatedly hits the same wall: the content is \emph{there}, but
+not \emph{findable}. The conventional remedy---uploading the file to a
+server-side OCR service to produce a new, searchable PDF---is slow, raises
+privacy concerns, and breaks the natural in-browser reading flow.
+
+\subsection{Key Idea}
+\proj{} takes a deliberately different stance. Instead of \emph{reinventing}
+search---building an index, a query parser, and highlight logic---it
+\emph{transforms the document so the browser can search it natively}. Every page
+is rendered, any text baked into images is recovered with OCR, and the recovered
+text is injected back into the page as invisible, exactly-positioned DOM
+elements. From the browser's perspective the document now \emph{is} text, and the
+entire mature machinery of in-page search applies for free.
+
+This inversion is the conceptual core of the project: \emph{the cheapest way to
+make something searchable is to make it real text}, not to intercept and
+re-implement the act of searching.
+
+\subsection{Contributions}
+This report documents the design and implementation of \proj{}. Its principal
+contributions are:
+
+\begin{itemize}
+  \item A fully \textbf{client-side, offline} pipeline that makes scanned PDFs
+        searchable in the browser, with no server round-trip and no data leaving
+        the user's machine.
+  \item A \textbf{coordinate-mapping engine} that aligns OCR output and native
+        PDF text across four distinct coordinate spaces, remaining correct under
+        zoom, page rotation, and high-DPI rendering
+        (Section~\ref{sec:design}).
+  \item A \textbf{performance architecture}---lazy, viewport-driven rendering
+        plus idle-time background indexing on Web Workers, with
+        resolution-independent caching in IndexedDB---that keeps the interface
+        responsive on large documents (Section~\ref{sec:impl}).
+  \item An \textbf{OCR accuracy layer}: high-resolution rendering with targeted
+        image preprocessing, plus post-processing that emits search-only
+        correction variants to raise the find hit-rate
+        (Section~\ref{sec:impl}).
+\end{itemize}
+
+\subsection{Report Structure}
+Section~\ref{sec:requirements} states the system's functional requirements as
+user stories. Section~\ref{sec:background} surveys the relevant background and
+prior approaches. Section~\ref{sec:tech} catalogues the technologies used and how
+they coordinate. Section~\ref{sec:design} presents the system architecture and the
+coordinate-mapping problem at its heart. Section~\ref{sec:process} recounts the
+phased development of the project and the reasoning behind each phase, and
+Section~\ref{sec:impl} details the implementation of each pipeline stage.
+Section~\ref{sec:results} evaluates the system qualitatively,
+Section~\ref{sec:limitations} discusses limitations and future work, and
+Section~\ref{sec:conclusion} concludes.

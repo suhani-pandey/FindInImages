@@ -1,0 +1,136 @@
+\section{Development Process: Phased Implementation}
+\label{sec:process}
+
+\proj{} was built incrementally, one phase at a time, with each phase shipped and
+tested before the next began. Two fixed principles governed the whole effort:
+the original PDF is \textbf{never modified}---the system is strictly a read-only
+render plus an overlay---and the headline capability, \textbf{finding text inside
+images}, had to be as close to ``100\% findable'' as possible. This section
+records how the work was planned, how it actually unfolded, and the reasoning at
+each step.
+
+\subsection{Planning: The Initial Estimate}
+Before writing code, the work was broken into seven phases with rough effort
+estimates (Table~\ref{tab:planned}). Two were flagged up front as the likely
+time-sinks: the \emph{invisible text-layer overlay} (the coordinate-alignment
+problem) and \emph{intercepting Chrome's built-in PDF viewer}, which is sandboxed
+and cannot simply be scripted.
+
+\begin{table}[ht]
+  \centering
+  \caption{Initial seven-phase plan drawn up before implementation began. Phases~5
+           and~6 were flagged as the expected time-sinks; Phase~6 was ultimately
+           pulled forward and solved first.}
+  \label{tab:planned}
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabularx}{\textwidth}{@{}clX@{}}
+    \toprule
+    \textbf{\#} & \textbf{Planned phase} & \textbf{Note} \\
+    \midrule
+    1 & Extension scaffolding (MV3) & Manifest, service worker, content-script wiring \\
+    2 & PDF.js rendering pipeline & Pages to canvas; worker setup in an extension context \\
+    3 & Tesseract.js OCR & Plumbing OCR into the async page pipeline \\
+    4 & Per-page text detection & \code{getTextContent()} check --- quick \\
+    5 & Invisible text-layer overlay & \emph{Hardest:} PDF$\leftrightarrow$canvas$\leftrightarrow$DOM coordinate alignment \\
+    6 & Intercept Chrome's PDF viewer & \emph{Hidden complexity:} sandboxed viewer; must redirect \\
+    7 & Polish, edge cases, testing & --- \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Execution: How the Build Actually Unfolded}
+Execution diverged from the plan in two instructive ways. First, viewer
+interception (planned as Phase~6) turned out to be a \emph{prerequisite} for
+everything else---you cannot render or overlay anything until you control the
+page---so it was solved first, folded into Phase~1. Second, ``OCR accuracy''
+was not a single step but the dominant theme of the back half of the project: it
+expanded into several phases as the README roadmap and real test feedback
+exposed new failure modes. The phases below are the build as it actually
+happened.
+
+\medskip
+\noindent\textbf{Foundation.}
+\begin{description}[leftmargin=1.4em, style=nextline, itemsep=4pt]
+  \item[Phase 1 --- Extension skeleton \& PDF interception.] Built the MV3
+        manifest, service worker, content script, and an empty viewer, then made
+        the service worker redirect \code{.pdf} navigations to that viewer.
+        \emph{Why first:} Chrome opens PDFs in its own sandboxed viewer that
+        scripts cannot reach, so gaining control of the page is the true
+        starting point---and it establishes the read-only-overlay architecture.
+        \emph{Revealed:} a viewer that shows nothing yet $\rightarrow$ Phase~2.
+  \item[Phase 2 --- PDF.js rendering pipeline.] Bundled PDF.js locally (to satisfy
+        the MV3 CSP) and rendered each page to a canvas, switching to a
+        \emph{dynamic} redirect rule so the original URL survives as
+        \code{?url=}. \emph{Friction:} \code{file://} security origins and the
+        \code{getDocument} URL parameter both needed care. \emph{Revealed:} pages
+        display but nothing is searchable $\rightarrow$ Phase~3.
+  \item[Phase 3 --- Text detection, OCR \& the invisible overlay.] The heart of
+        the project: detect native text with \code{getTextContent()}, OCR image
+        pages with Tesseract.js in a worker, and inject invisible spans over the
+        canvas. \emph{Key pivot:} the first design was \emph{either/or} (use
+        native text, else OCR), but a page containing the same word both as native
+        text \emph{and} inside an image matched only the native copy---image text
+        was lost. The design changed to \emph{both}: always inject native text,
+        then OCR images and merge only the non-duplicate words (text-aware
+        de-duplication). \emph{Revealed:} OCR re-ran on every load $\rightarrow$
+        Phase~4.
+  \item[Phase 4 --- IndexedDB caching.] Cache each page's words once, keyed per
+        document, with coordinates normalized to $[0,1]$ so the cache survives
+        any zoom level. \emph{Why:} OCR is the expensive step, so it should be a
+        one-time cost. \emph{Revealed:} language data still implied a CDN
+        $\rightarrow$ Phase~5.
+  \item[Phase 5 --- Fully offline.] Bundled the LSTM language model and pointed
+        Tesseract's \code{langPath} at it, removing the last network dependency.
+        \emph{Why:} privacy, reliability, and offline use---no document data ever
+        leaves the machine.
+\end{description}
+
+\noindent\textbf{Refinement} (working through the README roadmap and test feedback).
+\begin{description}[leftmargin=1.4em, style=nextline, itemsep=4pt]
+  \item[Phase 6 --- OCR accuracy: correction variants.] Added confidence
+        filtering, edge-noise trimming, and digit$\rightarrow$letter correction
+        variants (\code{he11o}$\rightarrow$\code{hello}) injected as search-only
+        spans. \emph{Thought:} native find is exact-match, so rather than
+        fuzzy-matching at query time, widen the \emph{stored} text.
+  \item[Phase 7 --- Rotated pages.] Derived each glyph's angle and size from the
+        \code{viewport.transform}\,$\times$\,\code{item.transform} matrix and
+        rotated the spans to match, so rotation is handled by the math rather
+        than special cases (Section~\ref{sec:design}).
+  \item[Phase 8 --- Multi-language OCR.] Added an English/Danish selector with a
+        per-language cache, so switching languages reprocesses independently and
+        non-destructively.
+  \item[Phase 9 --- Performance on large PDFs.] Introduced lazy,
+        viewport-driven rendering, idle-time background indexing, and
+        \emph{parallel} OCR via a worker scheduler. \emph{Thought:} a single
+        serial OCR worker was the real bottleneck; the roadmap's ``GPU
+        acceleration'' proved not actionable (Tesseract.js has no GPU path and
+        already uses the SIMD WASM core), so parallelism was the available win.
+  \item[Phase 10 --- Readability \& search UX.] Driven directly by user testing:
+        the text layer was made selectable/copyable; a measure-and-scale fix
+        aligned each invisible span to its exact width after selection and search
+        landed on the wrong characters (``\,Where is\,''$\rightarrow$``\,Where is
+        the b\,''); and the native find bar---which flashed the invisible layer
+        as oversized doubled text---was replaced by a custom find bar with
+        translucent highlights, $\uparrow/\downarrow$ navigation, and a distinct
+        active-match style for colourful pages.
+  \item[Phase 11 --- OCR image preprocessing.] The final push on the
+        ``100\% findable'' goal, targeting the cases still failing: sparse-text
+        segmentation recovered \emph{tables}; a high-resolution (3000\,px) OCR
+        canvas recovered \emph{small} text; and a percentile contrast stretch
+        plus unsharp mask attacked \emph{low-contrast and blurred} text (the
+        cache format version was bumped to invalidate stale results).
+        \emph{Thought:} decouple the OCR image from the display image and push
+        recognition as far as preprocessing allows---while accepting a hard
+        ceiling on genuinely low-resolution source images.
+\end{description}
+
+\subsection{Plan versus Reality}
+The original instinct that the \emph{overlay} would be the hardest part was
+correct---coordinate alignment, the native-versus-image de-duplication, and the
+measure-and-scale fitting absorbed the most iteration. The estimate was wrong in
+its \emph{shape}, though: ``OCR'' looked like one tidy phase but became the
+project's centre of gravity, because the headline promise (find \emph{any} text
+in \emph{any} image) is exactly the kind of goal that surfaces a long tail of
+real-world failure modes---rotation, tables, multiple languages, blur, low
+contrast, small type. Each was its own phase, and each was reached by shipping
+the previous one and watching where it still fell short.

@@ -1,0 +1,27 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+\proj{} demonstrates that the most effective way to make a scanned or image-based
+document searchable in the browser is not to build a search engine, but to
+\emph{make the document into real text} and let the browser do what it already
+does well. Built as a fully client-side Manifest~V3 Chrome extension, the system
+intercepts PDF navigations, renders pages with PDF.js, recovers missing text with
+in-browser Tesseract.js OCR, and injects an invisible, precisely-aligned text
+layer that native search, selection, and copy all operate on directly---without
+any server round-trip or data leaving the user's machine.
+
+The project's depth lies in the parts that are easy to underestimate. Aligning
+recovered text with the rendered page is a four-space coordinate problem solved
+with an affine-transform pipeline and a measure-and-scale fitting step that stays
+correct under zoom, page rotation, and high-DPI rendering. Keeping a CPU-heavy
+workload usable is an architecture problem solved with lazy rendering, idle-time
+background indexing, a Web Worker pool, and resolution-independent caching.
+Maximizing findability is an accuracy problem attacked with high-resolution
+rendering, targeted image preprocessing, and search-only correction variants.
+
+Together these turn static, unsearchable documents into searchable, web-native
+experiences. More broadly, the project illustrates a reusable principle for
+client-side engineering: bridge a new capability (OCR) into an existing,
+battle-tested substrate (the browser's text and search machinery) rather than
+re-implementing that substrate---and invest the engineering effort precisely
+where the genuine difficulty lies.

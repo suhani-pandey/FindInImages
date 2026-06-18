@@ -1,0 +1,15 @@
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.log
+*.out
+*.toc
+*.run.xml
+*.synctex.gz
+build/
+
+# Keep the compiled PDF out of git by default; remove this line if you want to
+# commit the rendered report.
+main.pdf

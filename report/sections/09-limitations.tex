@@ -1,0 +1,45 @@
+\section{Limitations and Future Work}
+\label{sec:limitations}
+
+\subsection{Limitations}
+\begin{description}[leftmargin=1.4em, style=nextline]
+  \item[OCR is not perfect.] Recognition errors propagate into search. Because
+        native find is exact, a misread character can make a word unfindable by
+        its true spelling. Correction variants mitigate the most common
+        digit/letter confusions but do not cover the general case.
+  \item[Cost scales with the document.] Recognition is CPU-bound and runs on the
+        client. Very large or very dense documents take correspondingly longer to
+        fully index, even though lazy rendering keeps the document immediately
+        readable and caching makes subsequent loads instant.
+  \item[Complex layouts can misalign.] Multi-column text, unusual fonts, and
+        heavy graphical backgrounds can produce slight overlay drift or
+        degraded recognition.
+  \item[Device-dependent performance.] Throughput depends on the number of CPU
+        cores and the device's overall capability, since the worker pool scales
+        with available concurrency.
+  \item[Scope is currently PDF-centric.] Image text on ordinary web pages is not
+        yet handled; the content script that would address this is presently a
+        placeholder.
+\end{description}
+
+\subsection{Future Work}
+\begin{itemize}
+  \item \textbf{Higher OCR accuracy.} Richer post-processing---dictionary-based
+        correction, confidence-weighted variants, and language-model
+        re-ranking---to reduce unfindable misreads beyond the current
+        digit/letter mapping.
+  \item \textbf{Better rotation and skew handling.} Automatic deskew before
+        recognition for photographed or imperfectly-scanned pages.
+  \item \textbf{Broader language support.} Additional bundled language models and
+        automatic script detection.
+  \item \textbf{Acceleration.} Exploiting GPU/WebAssembly SIMD acceleration and
+        preprocessing whole documents in the background to shorten time-to-fully-
+        searchable on large files.
+  \item \textbf{General web-page image text.} Extending the pipeline, via the
+        content script, to make text inside ordinary \code{<img>} elements
+        searchable, not just PDFs.
+  \item \textbf{Quantitative evaluation.} A benchmark suite measuring recognition
+        accuracy (e.g.\ character/word error rate) and per-page latency across a
+        corpus of representative scanned documents, to turn the qualitative
+        results of Section~\ref{sec:results} into reproducible numbers.
+\end{itemize}

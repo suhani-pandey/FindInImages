@@ -1,0 +1,156 @@
+%==============================================================================
+%  Find in Images — Project Report
+%
+%  Modular LaTeX project. This file holds the preamble + document scaffolding;
+%  each section lives in its own file under sections/ and is pulled in with
+%  \input below. Build with:  ./build.sh   (or: tectonic -X compile main.tex)
+%==============================================================================
+\documentclass[11pt,a4paper]{article}
+
+% --- Engine-aware font setup (works under both XeTeX/Tectonic and pdfLaTeX) ---
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\else
+  \usepackage{fontspec}
+\fi
+
+% --- Layout & typography ------------------------------------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{parskip}            % block paragraphs, modern look
+\usepackage{setspace}
+% \onehalfspacing   % dropped — single spacing keeps the report compact
+\setlength{\emergencystretch}{3em}   % soak up minor overfull lines (inline \code, URLs)
+
+% --- Color & graphics ---------------------------------------------------------
+\usepackage{graphicx}
+\usepackage{xcolor}
+\definecolor{accent}{HTML}{1F6FB2}     % links / headings accent
+\definecolor{codebg}{HTML}{F6F8FA}
+\definecolor{codekw}{HTML}{8250DF}
+\definecolor{codestr}{HTML}{0A7D33}
+\definecolor{codecmt}{HTML}{6A737D}
+\definecolor{rulegray}{HTML}{D0D7DE}
+
+% --- Tables & lists -----------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+
+% --- Section heading styling --------------------------------------------------
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
+
+% --- Headers / footers --------------------------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape Find in Images}
+\fancyhead[R]{\small\itshape Project Report}
+\fancyfoot[C]{\thepage}
+
+% --- Math & diagrams ----------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+% --- Code listings ------------------------------------------------------------
+\usepackage{listings}
+\lstdefinestyle{js}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestr},
+  commentstyle=\color{codecmt}\itshape,
+  numbers=left, numberstyle=\tiny\color{codecmt}, numbersep=8pt,
+  frame=single, framerule=0.4pt, rulecolor=\color{rulegray},
+  breaklines=true, breakatwhitespace=true,
+  showstringspaces=false, tabsize=2,
+  language=Java,                                  % close enough for JS keywords
+  morekeywords={const,let,async,await,function,of,new,class,export,import,from},
+  captionpos=b, xleftmargin=14pt, framexleftmargin=14pt,
+}
+\lstset{style=js}
+
+% --- Captions -----------------------------------------------------------------
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf,labelsep=period}
+
+% --- Bibliography (classic BibTeX; Tectonic runs bibtex internally, no biber) -
+\usepackage{cite}
+
+% --- Hyperlinks (load late) ---------------------------------------------------
+\usepackage[hidelinks]{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accent, citecolor=accent, urlcolor=accent,
+  pdftitle={Find in Images — Making Scanned PDFs Searchable via In-Browser OCR},
+  pdfauthor={Suhani Pandey},
+}
+
+% --- Handy macros -------------------------------------------------------------
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\proj}{\textsc{Find in Images}}
+
+%==============================================================================
+\begin{document}
+
+% ---------- Title page --------------------------------------------------------
+\begin{titlepage}
+  \centering
+  \vspace*{1.5cm}
+
+  {\Large\bfseries\color{accent} Searchable Documents Project\par}
+  \vspace{0.4cm}
+  {\color{rulegray}\rule{0.6\textwidth}{1pt}}\par
+  \vspace{1.2cm}
+
+  {\Huge\bfseries Find in Images\par}
+  \vspace{0.8cm}
+  {\LARGE Making Scanned PDFs and Image-Based Documents\\[0.3em]
+   Searchable with In-Browser OCR and DOM Text Injection\par}
+
+  \vspace{2.2cm}
+  {\large\bfseries Suhani Pandey\par}
+  \vspace{0.3cm}
+  {\normalsize A Chrome Extension (Manifest V3)\par}
+
+  \vfill
+
+
+  \vspace{1.2cm}
+  {\large \today\par}
+\end{titlepage}
+
+\tableofcontents
+\thispagestyle{fancy}
+\clearpage
+
+% ---------- Body --------------------------------------------------------------
+% ---------- Front matter ------------------------------------------------------
+\input{sections/00-abstract}
+\input{sections/01-introduction}
+\input{sections/02-functional-requirements}
+\input{sections/03-background}
+\input{sections/04-technology}
+\input{sections/05-system-design}
+\input{sections/06-development-process}
+\input{sections/07-implementation}
+\input{sections/08-results}
+\input{sections/09-limitations}
+\input{sections/10-conclusion}
+
+% ---------- References --------------------------------------------------------
+\clearpage
+\addcontentsline{toc}{section}{References}
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+\end{document}

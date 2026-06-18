@@ -1,0 +1,210 @@
+\section{System Design and Architecture}
+\label{sec:design}
+
+\subsection{Overview}
+\proj{} is structured as a \emph{pipeline} that converts an incoming PDF request
+into searchable DOM text. A PDF navigation is intercepted and redirected to a
+custom viewer; the viewer renders each page, checks whether it paints raster images or lacks
+extractable text, recovers image text with OCR where needed, normalizes coordinates,
+and injects an invisible text layer that the browser's find feature can search.
+Figure~\ref{fig:pipeline} shows the end-to-end flow.
+
+\begin{figure}[p]
+  \centering
+  \vspace*{6mm}
+  \begin{tikzpicture}[
+      %% Generous vertical gap between every node
+      node distance=14mm,
+      %% Main-column boxes
+      box/.style={rectangle, rounded corners=4pt, draw=accent!70, fill=accent!6,
+                  text width=6.4cm, align=center, minimum height=13mm,
+                  font=\small, inner sep=7pt},
+      %% OCR-branch boxes (slightly shaded to mark the conditional path)
+      side/.style={rectangle, rounded corners=4pt, draw=accent!80, fill=accent!12,
+                   text width=4.6cm, align=center, minimum height=13mm,
+                   font=\small, inner sep=7pt},
+      dec/.style={diamond, aspect=3.0, draw=accent!70, fill=accent!6,
+                  align=center, font=\small, inner sep=3pt},
+      io/.style={rectangle, draw=rulegray, fill=codebg, text width=6.4cm,
+                 align=center, font=\small, minimum height=10mm, inner sep=5pt},
+      arr/.style={-{Stealth[length=2.6mm]}, draw=accent!80, thick},
+      lbl/.style={font=\scriptsize\itshape, fill=white, inner sep=2pt},
+    ]
+
+    %% ── Left (main) column ──────────────────────────────────────────────────
+    \node[io]  (req)    {PDF request
+                         (\code{http} / \code{https} / \code{file})};
+
+    \node[box, below=of req]    (sw)
+      {Service worker redirects to custom viewer\\
+       via \code{declarativeNetRequest}};
+
+    \node[box, below=of sw]     (render)
+      {PDF.js renders page to \code{<canvas>}\\
+       and extracts native text items};
+
+    \node[dec, below=14mm of render, text width=3.2cm] (dec)
+      {Images present\\or no text?};
+
+    \node[box, below=46mm of dec] (norm)
+      {Normalize word coordinates;\\
+       cache results in IndexedDB};
+
+    \node[box, below=of norm]   (inject)
+      {Inject invisible \code{<span>} text layer\\
+       positioned over the canvas};
+
+    \node[io,  below=of inject] (search)
+      {Searchable via custom find bar
+       ($\mathrm{Ctrl}{+}\mathrm{F}$)};
+
+    %% ── Right (OCR) branch ──────────────────────────────────────────────────
+    \node[side, right=26mm of dec] (ocr)
+      {Tesseract.js OCR\\
+       (Web Worker pool)};
+
+    \node[side, below=14mm of ocr] (merge)
+      {Merge \& de-duplicate\\
+       native + OCR words};
+
+    %% ── Arrows ──────────────────────────────────────────────────────────────
+    \draw[arr] (req)    -- (sw);
+    \draw[arr] (sw)     -- (render);
+    \draw[arr] (render) -- (dec);
+
+    %% "no" path: straight down the left column, skips OCR
+    \draw[arr] (dec.south)
+      -- node[lbl, left=4pt] {no --- text-only page}
+      (norm.north);
+
+    %% "yes" path: right to OCR branch
+    \draw[arr] (dec.east)
+      -- node[lbl, above=3pt] {yes --- images found}
+      (ocr.west);
+
+    \draw[arr] (ocr) -- (merge);
+
+    %% merge rejoins main column via a clean L-shaped connector
+    \draw[arr] (merge.south) -- ++(0,-10mm) -| (norm.east);
+
+    \draw[arr] (norm)   -- (inject);
+    \draw[arr] (inject) -- (search);
+  \end{tikzpicture}
+  \vspace*{4mm}
+  \caption{End-to-end processing pipeline. Each page is rendered and its native text
+           extracted. If the page contains raster image operators \emph{or} has no
+           extractable text (right branch), Tesseract.js runs OCR on a high-resolution
+           offscreen canvas and the results are merged with any native text, dropping
+           duplicates. Text-only pages skip OCR and pass straight to normalization
+           (left path). Both paths converge at coordinate normalization before the
+           invisible text layer is injected over the canvas.}
+  \label{fig:pipeline}
+\end{figure}
+
+\subsection{Components}
+\begin{description}[leftmargin=1.4em, style=nextline]
+  \item[Request interception] A service worker registers a dynamic
+        \code{declarativeNetRequest} rule on install that matches URLs ending in
+        \code{.pdf} and redirects them to \code{viewer.html}, preserving the
+        original URL as a query parameter.
+  \item[Custom viewer] A self-contained HTML/JS page that owns rendering, OCR
+        orchestration, the text layer, and the find UI.
+  \item[Rendering] PDF.js rasterizes each page to a canvas, lazily and at the
+        device pixel ratio for crisp output.
+  \item[Text detection] For each page the viewer asks PDF.js for its text content
+        and operator list to decide whether OCR is required.
+  \item[OCR] A pool of Tesseract.js Web Workers recognizes text on image pages,
+        returning words with bounding boxes.
+  \item[Normalization \& caching] Word coordinates are normalized to the unit
+        square and cached in IndexedDB so results are reusable across zoom levels
+        and sessions.
+  \item[Text-layer injection] Invisible, individually-scaled \code{<span>}
+        elements are positioned over the canvas.
+  \item[Search] A custom find bar searches the injected text and draws highlight
+        overlays.
+\end{description}
+
+\subsection{The Coordinate-Mapping Problem}
+The hardest part of the system is geometric. Text originates in up to four
+distinct coordinate spaces, and the injected overlay must align with the rendered
+page in all of them simultaneously:
+
+\begin{center}
+\begin{tikzpicture}[
+    sp/.style={rectangle, rounded corners=2pt, draw=accent!70, fill=accent!6,
+               align=center, font=\small\ttfamily, minimum height=9mm,
+               inner sep=4pt},
+    a/.style={-{Stealth[length=2.2mm]}, draw=accent!80, thick}]
+  \node[sp] (pdf) {PDF space\\\footnotesize\rmfamily points, $\uparrow$ origin};
+  \node[sp, right=7mm of pdf] (vp) {Viewport\\\footnotesize\rmfamily PDF.js scale};
+  \node[sp, right=7mm of vp] (cv) {Canvas\\\footnotesize\rmfamily device px};
+  \node[sp, right=7mm of cv] (dom) {DOM overlay\\\footnotesize\rmfamily CSS px, $\downarrow$ origin};
+  \draw[a] (pdf) -- (vp);
+  \draw[a] (vp) -- (cv);
+  \draw[a] (cv) -- (dom);
+\end{tikzpicture}
+\end{center}
+
+PDF space uses typographic points with a bottom-left origin; the PDF.js viewport
+applies a scale (and any page rotation); the canvas backing store is further
+scaled by the device pixel ratio for high-DPI sharpness; and the DOM overlay uses
+CSS pixels with a top-left origin. A glyph recovered or extracted in one space
+must be drawn at the corresponding location in the overlay, or search highlights
+and text selection drift away from the visible characters.
+
+For \emph{native} PDF text, PDF.js supplies, per item, an affine transform
+$M_{\text{item}}$ and the viewport's transform $M_{\text{vp}}$ (which already
+folds in page rotation). The glyph's full matrix in device space is their product
+\begin{equation}
+  M \;=\; M_{\text{vp}}\, M_{\text{item}},
+  \qquad
+  M=\begin{bmatrix} a & c & e\\ b & d & f \\ 0 & 0 & 1\end{bmatrix},
+  \label{eq:matmul}
+\end{equation}
+from which the baseline angle and device-space font height follow directly:
+\begin{equation}
+  \theta = \operatorname{atan2}(b,\,a),
+  \qquad
+  h = \sqrt{c^{2}+d^{2}} .
+  \label{eq:angle}
+\end{equation}
+Because rotation falls out of the matrix in Eq.~\eqref{eq:angle}, rotated pages
+and rotated text are handled without special cases. The span's top-left corner is
+obtained by stepping from the baseline origin $(e,f)$ up by the ascent
+$h_a \approx 0.8\,h$ along the text direction.
+
+For \emph{OCR} text, Tesseract reports pixel bounding boxes in the
+high-resolution OCR canvas. These are normalized to the unit square by dividing
+by the OCR canvas dimensions,
+\begin{equation}
+  \tilde{x} = \frac{x}{W_{\text{ocr}}},\qquad
+  \tilde{y} = \frac{y}{H_{\text{ocr}}},
+  \label{eq:normalize}
+\end{equation}
+so the cached result is independent of the resolution at which OCR happened. At
+draw time they are denormalized into the text layer's CSS-pixel space using the
+\emph{viewport} dimensions---not the DPR-scaled canvas dimensions---so the
+invisible text and the visible page share one coordinate system.
+
+\subsection{Key Design Decisions}
+Four decisions shape the rest of the system and are justified where they appear
+in Section~\ref{sec:impl}:
+
+\begin{enumerate}
+  \item \textbf{Never modify the original PDF.} The system is a strictly
+        read-only render plus an overlay: the source file's bytes and format are
+        left untouched, and all recovered text lives in a separate, invisible DOM
+        layer. This constraint, fixed from the outset, rules out any
+        rewrite-the-PDF approach and is the reason searchability is added
+        \emph{around} the document rather than \emph{into} it.
+  \item \textbf{Inject real text instead of intercepting search.} This reuses the
+        browser's indexing, matching, and (optionally) highlighting, and keeps
+        recovered text selectable and copyable.
+  \item \textbf{Separate the OCR image from the display image.} Display fidelity
+        and OCR legibility have different requirements, so the page is rendered
+        twice: once for the screen at the device pixel ratio, and once offscreen
+        at high resolution purely for recognition.
+  \item \textbf{Lazy rendering with background indexing.} Pages render as they
+        approach the viewport for responsiveness, while a separate idle-time pass
+        guarantees that off-screen pages still become searchable.
+\end{enumerate}

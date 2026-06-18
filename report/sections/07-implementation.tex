@@ -1,0 +1,187 @@
+\section{Implementation}
+\label{sec:impl}
+
+This section walks through the pipeline stage by stage. Code excerpts are drawn
+from the extension's source and lightly trimmed for space.
+
+\subsection{Extension Structure and PDF Interception}
+The extension is a Manifest~V3 package. Its content security policy permits
+\code{wasm-unsafe-eval} so the bundled Tesseract WebAssembly core can run, and
+the OCR engine, language data, and PDF.js are declared as web-accessible
+resources so the viewer can load them offline---no CDN fetch occurs at runtime.
+
+On installation, the service worker registers a single dynamic
+\code{declarativeNetRequest} rule. The extension's runtime ID is not known until
+install time, so the rule is created programmatically rather than statically
+(Listing~\ref{lst:redirect}). The regular expression matches \code{http},
+\code{https}, and \code{file} URLs ending in \code{.pdf}, and the
+\code{regexSubstitution} of \code{\textbackslash0} folds the entire matched URL
+into the viewer's \code{?url=} parameter.
+
+\begin{lstlisting}[caption={Dynamic \code{declarativeNetRequest} rule installed at extension startup: intercepts \code{.pdf} URLs and redirects them to the custom viewer, embedding the original URL as a \code{?url=} parameter (\code{service-worker.js}).}, label={lst:redirect}]
+await chrome.declarativeNetRequest.updateDynamicRules({
+  removeRuleIds: [1],
+  addRules: [{
+    id: 1, priority: 1,
+    action: { type: "redirect",
+      redirect: { regexSubstitution: `${viewerBase}?url=\\0` } },
+    condition: {
+      regexFilter: "^(https?|file)://.*\\.pdf(\\?.*)?$",
+      resourceTypes: ["main_frame", "sub_frame"],
+    },
+  }],
+});
+\end{lstlisting}
+
+The viewer then reads the original URL from its query string. Because
+\code{URLSearchParams} percent-decodes values, the raw string is re-encoded with
+\code{encodeURI} before being handed to PDF.js, preserving spaces and special
+characters in the path while leaving URL syntax intact.
+
+\subsection{Lazy Rendering Pipeline}
+Rendering and OCR-ing every page up front would block on large documents.
+Instead, the viewer immediately creates a correctly-sized placeholder
+\code{<div>} for every page---estimated from page~1's dimensions so the scrollbar
+reserves the right space---and uses an \code{IntersectionObserver}
+\cite{intersectionobserver} with a 300\,px margin to render each page just before
+it scrolls into view.
+
+Each page is rendered at the device pixel ratio (capped at $2\times$) so text
+stays crisp on Retina displays: the canvas backing store is enlarged by the
+output scale while the canvas is \emph{displayed} at CSS size, letting the browser
+downsample to a sharp image. Layout remains in CSS pixels, which keeps the text
+layer's coordinate space stable regardless of display density.
+
+\subsection{Text Detection}
+For each page the viewer first calls \code{getTextContent()}. It then decides
+whether OCR is needed: OCR runs when the page paints raster images \emph{or} when
+no text is extractable at all (a page may be a scan, or have text converted to
+vector outlines---both invisible to \code{getTextContent()}). Image detection
+inspects the operator list:
+
+\begin{lstlisting}[caption={Image-detection function: scans the PDF.js operator list for raster paint opcodes to decide whether OCR is needed on a given page (\code{viewer.js}).}, label={lst:hasimages}]
+const IMAGE_OPS = new Set([
+  pdfjsLib.OPS.paintImageXObject,      pdfjsLib.OPS.paintInlineImageXObject,
+  pdfjsLib.OPS.paintImageMaskXObject,  pdfjsLib.OPS.paintImageXObjectRepeat,
+]);
+async function pageHasImages(page) {
+  const opList = await page.getOperatorList();
+  return opList.fnArray.some((fn) => IMAGE_OPS.has(fn));
+}
+\end{lstlisting}
+
+If image detection fails it \emph{fails open}---assuming images are present---on
+the principle that an unnecessary OCR pass is cheaper than silently missing text.
+
+\subsection{Native Text-Layer Injection}
+When PDF text exists, it is injected directly because it is exact and free.
+Aligning the invisible glyphs with the canvas, however, requires care: a span's
+natural rendered width will not match the PDF run's width. The implementation uses
+a three-pass \emph{measure-and-scale} technique that triggers only one layout
+reflow. Each span is created and positioned using the matrix of
+Eq.~\eqref{eq:matmul}--\eqref{eq:angle}; all spans are measured in a single pass;
+then each is scaled horizontally to exactly its target device-space width:
+\begin{equation}
+  s_x \;=\; \frac{w_{\text{target}}}{w_{\text{measured}}},
+\end{equation}
+applied as a CSS \code{scaleX} (composed with \code{rotate($\theta$)} for rotated
+text). Measuring rather than estimating is what makes selection and find land on
+the correct characters. The matrix product itself is implemented directly:
+
+\begin{lstlisting}[caption={Six-element 2D affine matrix product that composes the PDF.js viewport transform with each glyph's own transform when placing native text spans (\code{text-layer.js}).}, label={lst:matmul}]
+function matMul(m1, m2) {
+  return [
+    m1[0]*m2[0] + m1[2]*m2[1],          m1[1]*m2[0] + m1[3]*m2[1],
+    m1[0]*m2[2] + m1[2]*m2[3],          m1[1]*m2[2] + m1[3]*m2[3],
+    m1[0]*m2[4] + m1[2]*m2[5] + m1[4],  m1[1]*m2[4] + m1[3]*m2[5] + m1[5],
+  ];
+}
+\end{lstlisting}
+
+\subsection{OCR Rendering and Preprocessing}
+The on-screen canvas is sized to the window and is often too low-resolution for
+small text inside images. OCR therefore uses a \emph{separate, offscreen} canvas
+targeting roughly 3000\,px wide ($\approx$350\,DPI for a Letter page),
+discarded immediately after recognition to free memory.
+
+Before recognition, the image is preprocessed in grayscale to attack the two
+hardest cases---low contrast and blur:
+\begin{enumerate}
+  \item \textbf{Percentile contrast stretch.} A luminance histogram is computed
+        and the intensities between the 2nd and 98th percentiles are stretched to
+        the full $[0,255]$ range (ignoring outliers). Low-contrast pages are
+        pushed toward clean black-on-white; already-punchy pages are left almost
+        unchanged.
+  \item \textbf{Unsharp mask.} Edges are re-sharpened as
+        $\text{sharp} = g + \alpha\,(g - g_{\text{blur}})$ with $\alpha=1$, where
+        $g_{\text{blur}}$ comes from a separable box blur implemented with a
+        sliding-window sum so its cost is $O(n)$ independent of radius.
+\end{enumerate}
+Tesseract performs its own binarization afterward, so this stage only needs to
+hand it a clean, high-contrast grayscale image.
+
+\subsection{OCR Engine Orchestration}
+Recognition runs through a Tesseract.js \emph{scheduler} that distributes jobs
+across a pool of Web Workers, so multiple pages OCR concurrently without blocking
+the UI. The worker count scales with CPU cores but is capped, leaving one core for
+rendering, because each worker loads its own copy of the language model:
+\begin{equation}
+  N_{\text{workers}} = \max\!\big(1,\ \min(4,\ \texttt{hardwareConcurrency}-1)\big).
+\end{equation}
+Workers are configured for \emph{sparse text} page segmentation (find as much
+text as possible, in any order), which markedly outperforms the default layout
+analysis on tables, captions, and scattered small text. Three language modes are supported---\code{eng}, \code{dan}, and
+\code{eng+dan} (combined)---loaded from bundled \code{traineddata} files.
+The choice is persisted in \code{localStorage}, and results are cached per
+language so switching is non-destructive.
+
+\subsection{Post-Processing for Findability}
+Because native find performs exact substring matching, fuzzy matching is
+impossible at search time. The post-processing stage instead improves the
+\emph{stored} text. It drops near-zero-confidence noise, trims non-alphanumeric
+junk from word edges, and---critically---emits an extra \emph{correction variant}
+for words that look like digit/letter confusions (e.g.\ \code{he11o}
+$\rightarrow$ \code{hello}, \code{ca5h} $\rightarrow$ \code{cash}).
+A token whose digits outnumber its letters (more than 50\% digit characters)
+is left alone and treated as a genuine number or code, so correction is only
+applied where the OCR confusion is plausible:
+
+\begin{lstlisting}[caption={Emitting a search-only correction variant for OCR tokens with likely digit/letter confusions (e.g.\ \code{he11o}\,$\to$\,\code{hello}); the raw word is retained for copy/paste (\code{ocr-postprocess.js}).}, label={lst:variant}]
+const DIGIT_TO_LETTER = { "0":"o","1":"l","5":"s","6":"b","8":"b","9":"g","2":"z" };
+// keep the raw word (selectable), then add a corrected, search-only variant
+out.push({ text, bbox: w.bbox });
+const variant = correctionVariant(text);          // null unless mixed letters+digits
+if (variant && variant !== text)
+  out.push({ text: variant, bbox: w.bbox, variant: true });
+\end{lstlisting}
+
+Both the raw word and its corrected variant are injected at the same position, so
+a search succeeds whether the user types the true spelling or the OCR'd one.
+Variants are marked \code{variant:\,true} and excluded from mouse selection and
+copy via CSS (\code{user-select:\,none}), so copied text is never duplicated.
+
+\subsection{Normalization, Caching, and De-duplication}
+Recovered words are normalized to the unit square (Eq.~\eqref{eq:normalize}) and
+stored in IndexedDB, keyed by \code{\$\{docId\}::\$\{pageNum\}} where the document
+ID also encodes the OCR language. The store carries a \emph{format version};
+bumping it (e.g.\ when the preprocessing pipeline changed) transparently
+invalidates stale results. Empty results are cached too, so text-only pages are
+not re-examined on every load.
+
+A page can carry \emph{both} native text and image text. After OCR, words are
+de-duplicated against the native boxes: an OCR word is dropped only if its
+\emph{centre point} falls inside a native box that already contains the same
+token. This centre-point test means a large OCR word whose centre lies outside a
+small native box is kept, erring on the side of retaining searchable text.
+
+\subsection{Search and the Custom Find Bar}
+A subtle rendering issue motivated replacing the native find UI: Chrome's built-in
+find makes the invisible text layer briefly visible in a mismatched font, which
+looks like oversized, doubled text over the page. \proj{} therefore intercepts
+$\mathrm{Ctrl}/\mathrm{Cmd}{+}\mathrm{F}$ and presents its own find bar. For each
+query it walks the injected spans, builds a DOM \code{Range} around every match,
+and reads \code{getClientRects()} to draw translucent highlight overlays
+positioned relative to each page wrapper; the active match is styled distinctly
+and scrolled into view, with $\uparrow/\downarrow$, Enter, and F3 navigation.
+Because pages become searchable progressively, an active search is re-run
+(debounced) as each new page finishes indexing, with the current match preserved.

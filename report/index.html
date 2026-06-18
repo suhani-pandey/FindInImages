@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Find in Images — Project Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: #f6f8fa;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1F6FB2;
+      color: #fff;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      gap: 16px;
+    }
+
+    .header-text h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .header-text p {
+      font-size: 0.8rem;
+      opacity: 0.78;
+      margin-top: 2px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+
+    .btn-download {
+      background: #fff;
+      color: #1F6FB2;
+    }
+
+    .viewer {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .viewer embed,
+    .viewer object {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* Fallback message if browser can't embed PDF */
+    .fallback {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 16px;
+      color: #57606a;
+      font-size: 0.95rem;
+    }
+    .fallback a {
+      color: #1F6FB2;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-text">
+      <h1>Find in Images &mdash; Project Report</h1>
+      <p>Making Scanned PDFs Searchable with In-Browser OCR &middot; Suhani Pandey</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-download" href="main.pdf" download="Find-in-Images-Report.pdf">
+        &#8595; Download PDF
+      </a>
+    </div>
+  </header>
+
+  <div class="viewer">
+    <object data="main.pdf" type="application/pdf">
+      <div class="fallback" style="display:flex">
+        <p>Your browser cannot display the PDF inline.</p>
+        <a href="main.pdf">Open the PDF directly &rarr;</a>
+      </div>
+    </object>
+  </div>
+
+</body>
+</html>

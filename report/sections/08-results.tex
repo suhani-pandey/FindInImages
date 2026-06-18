@@ -1,0 +1,90 @@
+\section{Results and Evaluation}
+\label{sec:results}
+
+This evaluation is qualitative and behavioral: it characterizes what the system
+achieves and how its architecture behaves, rather than reporting formal accuracy
+or timing benchmarks, which are identified as future work in
+Section~\ref{sec:limitations}.
+
+\subsection{Functional Outcomes}
+The system meets its central goal: scanned and image-based PDFs that return
+nothing to in-page search become fully searchable in the browser. Specifically:
+\begin{itemize}
+  \item \textbf{Scanned PDFs become searchable.} Pages with no text layer are
+        OCR'd and their text injected, so queries match content that was
+        previously invisible to search.
+  \item \textbf{Mixed pages are handled.} Pages combining native text with text
+        baked into images expose both, with duplicates removed so a word is never
+        double-counted.
+  \item \textbf{Rotated text aligns.} Because rotation is recovered from the
+        transform matrix (Eq.~\eqref{eq:angle}) rather than special-cased,
+        highlights and selection track rotated pages and rotated runs.
+  \item \textbf{Selection and copy work.} Injected text is real DOM text, so
+        users can not only find but also select and copy recovered content;
+        search-only correction variants are excluded from copy to avoid
+        duplication.
+  \item \textbf{Fully offline.} OCR engine, language models, and PDF.js are
+        bundled, so no document data leaves the machine and the extension works
+        without a network connection.
+\end{itemize}
+
+\subsection{Architectural Behavior}
+The performance-oriented design choices produce the following observable
+behavior:
+
+\begin{table}[ht]
+  \centering
+  \caption{Design mechanisms and the behavior they produce.}
+  \label{tab:results}
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\textwidth}{@{}lX@{}}
+    \toprule
+    \textbf{Mechanism} & \textbf{Observed effect} \\
+    \midrule
+    Lazy, viewport-driven rendering & Large documents open immediately;
+      only near-viewport pages do work up front. \\
+    Idle-time background indexing & Off-screen pages still become searchable,
+      scheduled during idle time so scrolling is never blocked. \\
+    Web Worker OCR pool & Recognition runs off the main thread on several pages
+      at once; the interface stays responsive during OCR. \\
+    High-resolution OCR canvas + preprocessing & Small text inside images is
+      legible to the recognizer independent of on-screen zoom. \\
+    IndexedDB caching (normalized coords) & A document is OCR'd once; re-opening
+      or re-zooming it is instant and correct at any scale. \\
+    Correction variants & Common digit/letter misreads remain findable by their
+      true spelling. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Component Complexity}
+Table~\ref{tab:scope} summarizes the relative implementation complexity of each
+component. The coordinate-mapping and DOM-overlay subsystems dominate: they are
+where most of the subtle, correctness-critical logic lives.
+
+\begin{table}[ht]
+  \centering
+  \caption{Relative complexity by component.}
+  \label{tab:scope}
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{@{}lc@{}}
+    \toprule
+    \textbf{Component} & \textbf{Complexity} \\
+    \midrule
+    PDF rendering (PDF.js)            & Medium \\
+    OCR pipeline (Tesseract.js)       & Medium \\
+    Chrome extension integration      & Medium \\
+    Coordinate mapping                & High \\
+    DOM text-overlay system           & High \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Discussion}
+The results validate the project's central thesis: by converting documents into
+real, well-positioned DOM text, the system inherits the browser's mature search
+behavior almost for free, and the engineering effort concentrates where the real
+difficulty lies---geometric alignment and keeping a CPU-heavy workload off the
+critical path. The accuracy layer (high-resolution rendering, preprocessing, and
+correction variants) measurably widens what is findable in practice, though it
+cannot fully overcome poor source scans; this is examined next.

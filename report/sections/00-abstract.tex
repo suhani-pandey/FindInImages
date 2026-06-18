@@ -1,0 +1,26 @@
+\begin{abstract}
+\noindent
+Scanned PDFs and image-based documents are ubiquitous, yet a large fraction of
+them carry no machine-readable text layer, so the browser's familiar
+``find on page'' ($\mathrm{Ctrl}{+}\mathrm{F}$) returns nothing. This report
+presents \proj{}, a Chrome extension (Manifest~V3) that closes this gap entirely
+on the client. Rather than building a bespoke search engine, \proj{} \emph{makes
+the document itself searchable}: it intercepts PDF navigations, renders pages
+with PDF.js, detects which pages paint raster images or lack extractable text, runs optical character
+recognition (OCR) on those pages with Tesseract.js in Web Workers, and injects an
+invisible, precisely-aligned text layer over the rendered canvas so that search
+operates on real DOM text.
+
+The central engineering problem is geometric: OCR and PDF text live in different
+coordinate spaces (PDF points, the PDF.js viewport, the device-pixel canvas, and
+the CSS-pixel DOM overlay), and the injected glyphs must line up with the visible
+page across zoom levels and high-DPI displays. We describe the affine
+transformation pipeline that resolves this, a measure-and-scale technique that
+fits each invisible word to its target box, a high-resolution OCR rendering path
+with contrast-stretch and unsharp-mask preprocessing, resolution-independent
+caching in IndexedDB, and an OCR post-processing stage that emits search-only
+correction variants to improve hit-rate. We also discuss a custom find bar that
+replaces the native one to avoid rendering artifacts. The result is a fully
+offline, client-side system that turns static documents into searchable,
+web-native experiences.
+\end{abstract}
