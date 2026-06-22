@@ -4,11 +4,11 @@
   "version": "1.0.0",
   "description": "Makes scanned PDFs and image-based documents searchable using Ctrl+F via OCR and DOM text injection.",
 
-  "permissions": [
-    "storage",
-    "declarativeNetRequest",
-    "declarativeNetRequestWithHostAccess"
-  ],
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
 
   "host_permissions": [
     "<all_urls>"
@@ -18,14 +18,6 @@
     "service_worker": "service-worker.js"
   },
 
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
-
   "web_accessible_resources": [
     {
       "resources": ["viewer/viewer.html", "viewer/*", "lib/pdfjs/*", "lib/tesseract/*", "lib/tesseract/lang/*"],
@@ -34,7 +26,22 @@
   ],
 
   "action": {
-    "default_title": "Find in Images"
+    "default_title": "Search this PDF with OCR (Ctrl+Shift+F / ⌘⇧F)",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "commands": {
+    "toggle-search": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+F",
+        "mac": "Command+Shift+F"
+      },
+      "description": "Search text in this PDF (switch to / from the OCR viewer)"
+    }
   },
 
   "content_security_policy": {

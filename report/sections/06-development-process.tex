@@ -124,6 +124,29 @@ happened.
         ceiling on genuinely low-resolution source images.
 \end{description}
 
+\medskip
+\noindent\textbf{Production} (preparing for release).
+\begin{description}[leftmargin=1.4em, style=nextline, itemsep=4pt]
+  \item[Phase 12 --- Activation model: from automatic to on demand.] The biggest
+        late change reversed Phase~1's founding decision. Until now the extension
+        intercepted \emph{every} PDF navigation with \code{declarativeNetRequest}
+        and forced it into the custom viewer. Dogfooding on ordinary text PDFs
+        exposed the flaw: Chrome's native PDF viewer is a sandboxed plugin, so
+        replacing it threw away its entire toolbar and right-click menu
+        (thumbnails, rotate, print, download, Google~Lens, $\dots$)---none of which
+        a DOM viewer can reproduce---while for an already-searchable text PDF the
+        extension added nothing. \emph{Decision:} keep Chrome's native viewer as
+        the default and invoke the OCR viewer \emph{on demand} via a keyboard
+        shortcut (\code{Ctrl+Shift+F}) or the toolbar icon, toggling back on a
+        second press. \emph{Why:} the extension's value is real only for image and
+        scanned PDFs, and those are precisely the documents where the native
+        toolbar matters least---so scoping activation to them preserves the native
+        experience everywhere else (decision~\ref{dec:ondemand}). \emph{Side
+        benefit:} dropping interception also removed the \code{declarativeNetRequest}
+        and \code{storage} permissions and the catch-all content script, leaving a
+        much smaller, easier-to-review permission footprint.
+\end{description}
+
 \subsection{Plan versus Reality}
 The original instinct that the \emph{overlay} would be the hardest part was
 correct---coordinate alignment, the native-versus-image de-duplication, and the

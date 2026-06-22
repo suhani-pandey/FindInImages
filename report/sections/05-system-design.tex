@@ -2,11 +2,14 @@
 \label{sec:design}
 
 \subsection{Overview}
-\proj{} is structured as a \emph{pipeline} that converts an incoming PDF request
-into searchable DOM text. A PDF navigation is intercepted and redirected to a
-custom viewer; the viewer renders each page, checks whether it paints raster images or lacks
-extractable text, recovers image text with OCR where needed, normalizes coordinates,
-and injects an invisible text layer that the browser's find feature can search.
+\proj{} is structured as a \emph{pipeline} that converts a PDF the user wants to
+search into searchable DOM text. Chrome's native PDF viewer remains the default;
+when the user activates the extension on a PDF (by keyboard shortcut or the
+toolbar icon---see Section~\ref{sec:design}, decision~\ref{dec:ondemand}), the
+service worker switches the tab to a custom viewer. That viewer renders each
+page, checks whether it paints raster images or lacks extractable text, recovers
+image text with OCR where needed, normalizes coordinates, and injects an
+invisible text layer that the browser's find feature can search.
 Figure~\ref{fig:pipeline} shows the end-to-end flow.
 
 \begin{figure}[p]
@@ -32,12 +35,11 @@ Figure~\ref{fig:pipeline} shows the end-to-end flow.
     ]
 
     %% ── Left (main) column ──────────────────────────────────────────────────
-    \node[io]  (req)    {PDF request
-                         (\code{http} / \code{https} / \code{file})};
+    \node[io]  (req)    {PDF open in Chrome's native viewer};
 
     \node[box, below=of req]    (sw)
-      {Service worker redirects to custom viewer\\
-       via \code{declarativeNetRequest}};
+      {User triggers (\code{Ctrl+Shift+F} or icon);\\
+       service worker opens it in the custom viewer};
 
     \node[box, below=of sw]     (render)
       {PDF.js renders page to \code{<canvas>}\\
@@ -103,10 +105,10 @@ Figure~\ref{fig:pipeline} shows the end-to-end flow.
 
 \subsection{Components}
 \begin{description}[leftmargin=1.4em, style=nextline]
-  \item[Request interception] A service worker registers a dynamic
-        \code{declarativeNetRequest} rule on install that matches URLs ending in
-        \code{.pdf} and redirects them to \code{viewer.html}, preserving the
-        original URL as a query parameter.
+  \item[Activation] A service worker, idle until invoked, responds to the toolbar
+        icon or the keyboard shortcut by switching the active tab to
+        \code{viewer.html}, preserving the original PDF URL as a query parameter
+        (and switching back to the native viewer if invoked again).
   \item[Custom viewer] A self-contained HTML/JS page that owns rendering, OCR
         orchestration, the text layer, and the find UI.
   \item[Rendering] PDF.js rasterizes each page to a canvas, lazily and at the
@@ -187,10 +189,42 @@ draw time they are denormalized into the text layer's CSS-pixel space using the
 invisible text and the visible page share one coordinate system.
 
 \subsection{Key Design Decisions}
-Four decisions shape the rest of the system and are justified where they appear
+Five decisions shape the rest of the system and are justified where they appear
 in Section~\ref{sec:impl}:
 
 \begin{enumerate}
+  \item \textbf{Activate on demand; never replace the native viewer by default.}
+        \label{dec:ondemand}
+        Chrome renders PDFs in a built-in viewer backed by the sandboxed PDFium
+        plugin, which extensions cannot script or inject into. The only way to add
+        a searchable text layer to an image PDF is therefore to re-render it in a
+        custom viewer. An earlier design did this for \emph{every} PDF by
+        intercepting all PDF navigations with
+        \code{declarativeNetRequest}~\cite{dnr} and redirecting them to the custom
+        viewer. That worked but carried a heavy cost: it replaced Chrome's native
+        PDF experience for \emph{all} documents---including ordinary text PDFs that
+        are already searchable---discarding the native toolbar (page thumbnails,
+        rotate, annotate, print, download), the Google~Lens / Cast / reading-mode
+        integrations, and the full native right-click menu, none of which can be
+        reproduced in a DOM-based viewer. For a text PDF the extension thus
+        \emph{removed} capability while adding nothing, since the browser's
+        $\mathrm{Ctrl}{+}\mathrm{F}$ already works there.
+        Because the extension's value is confined to image and scanned PDFs---and
+        those are exactly the documents where the native toolbar features matter
+        least---the production design inverts the default. Chrome's native viewer
+        handles every PDF as usual, and the OCR viewer is invoked \emph{on demand}
+        (a browser-global keyboard shortcut, \code{Ctrl+Shift+F} /
+        \code{Cmd+Shift+F}, or the toolbar icon) only when the user actually needs
+        to search a non-searchable document; invoking it again returns the tab to
+        the native viewer. This preserves the full native experience by default,
+        scopes the custom viewer to the case that needs it, and---as a side
+        benefit---shrinks the permission footprint markedly: the extension no
+        longer needs \code{declarativeNetRequest}, a broad content script, or a
+        storage permission, requesting only the host access PDF.js needs to fetch
+        the document. The remaining cost is discoverability: with the native viewer
+        in front, the extension has no surface on which to advertise the shortcut,
+        so first-time users must learn it from the store listing or the icon
+        (Section~\ref{sec:limitations}).
   \item \textbf{Never modify the original PDF.} The system is a strictly
         read-only render plus an overlay: the source file's bytes and format are
         left untouched, and all recovered text lives in a separate, invisible DOM

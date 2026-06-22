@@ -18,8 +18,14 @@
         cores and the device's overall capability, since the worker pool scales
         with available concurrency.
   \item[Scope is currently PDF-centric.] Image text on ordinary web pages is not
-        yet handled; the content script that would address this is presently a
-        placeholder.
+        yet handled; addressing it would require a content script, which the
+        current build does not ship.
+  \item[Discoverability of activation.] Because the extension deliberately leaves
+        Chrome's native PDF viewer in place and activates on demand
+        (decision~\ref{dec:ondemand}), it has no surface on which to advertise
+        itself while a PDF is open in the native viewer. A first-time user must
+        learn the keyboard shortcut or the toolbar icon from the store listing or
+        the icon's tooltip. This is the price of not commandeering every PDF.
 \end{description}
 
 \subsection{Future Work}
@@ -35,7 +41,7 @@
   \item \textbf{Acceleration.} Exploiting GPU/WebAssembly SIMD acceleration and
         preprocessing whole documents in the background to shorten time-to-fully-
         searchable on large files.
-  \item \textbf{General web-page image text.} Extending the pipeline, via the
+  \item \textbf{General web-page image text.} Extending the pipeline, via a
         content script, to make text inside ordinary \code{<img>} elements
         searchable, not just PDFs.
   \item \textbf{Quantitative evaluation.} A benchmark suite measuring recognition

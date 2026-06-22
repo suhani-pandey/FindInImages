@@ -24,7 +24,7 @@ each one is used.
     \textbf{Technology} & \textbf{Role in the project} & \textbf{Where} \\
     \midrule
     Chrome Extension (MV3) & Packaging, lifecycle, and the permission/CSP model that lets WASM OCR run & \code{manifest.json} \\
-    Service worker + \code{declarative\allowbreak NetRequest} & Intercepts PDF navigations and redirects them to the custom viewer & \code{service-\allowbreak worker.js} \\
+    Service worker + \code{chrome.\allowbreak action} / \code{chrome.\allowbreak commands} & Activates the OCR viewer on demand (toolbar click or keyboard shortcut) and switches the tab to it & \code{service-\allowbreak worker.js} \\
     PDF.js (\code{pdfjs-dist}) & Parses and renders pages; supplies native text and image-operator info & \code{viewer.js} \\
     HTML5 Canvas API & Rasterization target --- both the on-screen page and the offscreen OCR image & \code{viewer.js} \\
     Tesseract.js (WASM) & Optical character recognition on image pages & \code{viewer.js} \\
@@ -44,11 +44,15 @@ each one is used.
         sets a content security policy of \code{script-src 'self'
         'wasm-\allowbreak unsafe-\allowbreak eval'} --- the last clause is what
         permits Tesseract's WebAssembly core to execute inside the extension.
-  \item[Service worker \& \code{declarativeNetRequest}.] On install the service
-        worker registers one \emph{dynamic} redirect rule whose regex matches
-        \code{.pdf} URLs and rewrites them to \code{viewer.html?url=\textbackslash0}.
-        The rule is dynamic (not static) because it must embed the extension's
-        runtime URL, which is unknown until install time.
+  \item[Service worker, \code{chrome.action} \& \code{chrome.commands}.] The
+        service worker stays dormant until the user invokes the extension on a
+        PDF---either by clicking the toolbar icon (\code{action.onClicked}) or by
+        pressing the keyboard shortcut (\code{commands.onCommand}, default
+        \code{Ctrl+Shift+F} / \code{Cmd+Shift+F}). Both
+        run the same handler, which switches the active tab to
+        \code{viewer.html?url=\dots}\ (or, if the tab is already the viewer,
+        switches it back to Chrome's native viewer). Section~\ref{sec:design}
+        explains why activation is on demand rather than automatic.
   \item[PDF.js.] \code{getDocument(\{url\})} loads the file; per page,
         \code{getViewport(\{scale\})} sizes it and \code{render()} draws it to a
         canvas. \code{getTextContent()}
@@ -86,7 +90,8 @@ each one is used.
 \subsection{Coordination Between Technologies}
 \code{viewer.js} is the orchestrator: it owns the page lifecycle and brokers
 every hand-off between the libraries. Figure~\ref{fig:integration} traces the
-data that crosses each boundary. A PDF request is rerouted by the service worker;
+data that crosses each boundary. On the user's trigger the service worker opens
+the PDF in the viewer;
 PDF.js rasterizes pages to canvas and reports their text and image operators;
 image pages are sent (as a high-resolution canvas) to the Tesseract worker pool,
 which returns words and boxes; those words are normalized and persisted to
@@ -108,8 +113,8 @@ which keeps the coupling between them loose and the data contracts explicit.
       b/.style={{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]}, draw=accent!80, semithick},
       lbl/.style={font=\scriptsize\itshape, fill=white, inner sep=1pt},
     ]
-    \node[io]  (req) {PDF request};
-    \node[tech, right=18mm of req] (sw) {Service worker\\\code{declarativeNetRequest}};
+    \node[io]  (req) {PDF in native\\viewer};
+    \node[tech, right=18mm of req] (sw) {Service worker\\\code{action} / \code{commands}};
     \node[hub, below=12mm of sw] (viewer) {\code{viewer.js}\\orchestrator};
 
     \node[tech, left=of viewer]  (pdfjs) {PDF.js};
@@ -119,8 +124,8 @@ which keeps the coupling between them loose and the data contracts explicit.
     \node[io,   below=14mm of viewer] (dom) {DOM text layer\\(invisible spans)};
     \node[io,   below right=14mm and 2mm of viewer] (find) {Find bar};
 
-    \draw[a] (req) -- (sw);
-    \draw[a] (sw) -- node[lbl,right]{redirect \code{?url=}} (viewer);
+    \draw[a] (req) -- node[lbl,above,align=center]{\code{Ctrl+Shift+F}\\/ click} (sw);
+    \draw[a] (sw) -- node[lbl,right]{open \code{?url=}} (viewer);
     \draw[b] (viewer) -- node[lbl,above,align=center]{render /\\text+ops} (pdfjs);
     \draw[a] (pdfjs) -- node[lbl,right]{raster} (canvas);
     \draw[b] (viewer) -- node[lbl,above,align=center]{hi-res canvas /\\words+bbox} (tess);

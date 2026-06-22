@@ -5,11 +5,13 @@ them carry no machine-readable text layer, so the browser's familiar
 ``find on page'' ($\mathrm{Ctrl}{+}\mathrm{F}$) returns nothing. This report
 presents \proj{}, a Chrome extension (Manifest~V3) that closes this gap entirely
 on the client. Rather than building a bespoke search engine, \proj{} \emph{makes
-the document itself searchable}: it intercepts PDF navigations, renders pages
-with PDF.js, detects which pages paint raster images or lack extractable text, runs optical character
-recognition (OCR) on those pages with Tesseract.js in Web Workers, and injects an
-invisible, precisely-aligned text layer over the rendered canvas so that search
-operates on real DOM text.
+the document itself searchable}. Chrome's native PDF viewer remains the default;
+when the user invokes the extension on a PDF---via a keyboard shortcut or the
+toolbar icon---the document is opened in a custom viewer that renders the pages
+with PDF.js, detects which pages paint raster images or lack extractable text,
+runs optical character recognition (OCR) on those pages with Tesseract.js in Web
+Workers, and injects an invisible, precisely-aligned text layer over the rendered
+canvas so that search operates on real DOM text.
 
 The central engineering problem is geometric: OCR and PDF text live in different
 coordinate spaces (PDF points, the PDF.js viewport, the device-pixel canvas, and

@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Find in Images — PDF Viewer</title>
+  <title>PDF Viewer</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       background: #404040;
@@ -16,50 +16,89 @@
       min-height: 100vh;
     }
 
+    /* ── Toolbar ───────────────────────────────────────────────────────────── */
     #toolbar {
-      width: 100%;
-      background: #2a2a2a;
-      color: #fff;
-      padding: 10px 20px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
       position: sticky;
       top: 0;
       z-index: 100;
+      width: 100%;
+      height: 40px;
+      background: #3c4043;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 0 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      flex-shrink: 0;
     }
 
-    #toolbar span { font-size: 14px; opacity: 0.8; }
+    .tb-sep {
+      width: 1px;
+      height: 22px;
+      background: #5f6368;
+      margin: 0 6px;
+      flex-shrink: 0;
+    }
 
-    #status {
-      margin-left: auto;
+    #toolbar button {
+      background: transparent;
+      border: none;
+      color: #e8eaed;
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 4px 8px;
       font-size: 13px;
-      color: #aaa;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    #toolbar button:hover { background: rgba(255,255,255,0.1); }
+    #toolbar button:disabled { opacity: 0.35; cursor: default; }
+    #toolbar button:disabled:hover { background: transparent; }
+
+    #page-input {
+      width: 36px;
+      text-align: center;
+      background: #202124;
+      color: #e8eaed;
+      border: 1px solid #5f6368;
+      border-radius: 3px;
+      font-size: 13px;
+      padding: 2px 4px;
+    }
+    #page-input:focus { outline: 2px solid #8ab4f8; border-color: transparent; }
+
+    #page-total {
+      color: #9aa0a6;
+      font-size: 13px;
+      white-space: nowrap;
     }
 
-    #lang-label { font-size: 12px; opacity: 0.7; }
+    #zoom-level {
+      width: 44px;
+      text-align: center;
+      color: #e8eaed;
+      font-size: 13px;
+    }
 
-    #lang-select {
-      background: #3a3a3a;
-      color: #ddd;
-      border: 1px solid #555;
-      border-radius: 4px;
-      padding: 5px 8px;
-      font-size: 12px;
+    #toolbar a.tb-btn {
+      background: transparent;
+      border: none;
+      color: #e8eaed;
       cursor: pointer;
-    }
-
-    #reprocess {
-      background: #3a3a3a;
-      color: #ddd;
-      border: 1px solid #555;
       border-radius: 4px;
-      padding: 5px 10px;
-      font-size: 12px;
-      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 13px;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
-    #reprocess:hover { background: #4a4a4a; }
+    #toolbar a.tb-btn:hover { background: rgba(255,255,255,0.1); }
 
+    /* ── Viewer container ──────────────────────────────────────────────────── */
     #viewer-container {
       margin-top: 20px;
       display: flex;
@@ -73,6 +112,17 @@
       padding-right: 20px;
     }
 
+    #error-message {
+      color: #f88;
+      font-size: 14px;
+      text-align: center;
+      padding: 40px 20px;
+      line-height: 1.6;
+      white-space: pre-line;
+      max-width: 640px;
+      display: none;
+    }
+
     .page-wrapper {
       position: relative;
       box-shadow: 0 4px 20px rgba(0,0,0,0.5);
@@ -84,14 +134,10 @@
       height: auto;
     }
 
-    /* Text layer: invisible spans for Ctrl+F AND text selection/copy. Must NOT
-       use overflow:hidden — Chrome's Find skips text clipped outside the viewport. */
     .text-layer {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       overflow: visible;
     }
 
@@ -101,28 +147,22 @@
       white-space: pre;
       cursor: text;
       transform-origin: 0% 0%;
-      /* Selectable + copyable, and visible to Chrome's Find */
       user-select: text;
       -webkit-user-select: text;
     }
 
-    /* Search-only OCR correction variants: findable by Ctrl+F but excluded from
-       mouse selection/copy so copied text isn't duplicated (e.g. "he11o hello"). */
     .text-layer span.variant {
       user-select: none;
       -webkit-user-select: none;
       pointer-events: none;
     }
 
-    /* Make the selection highlight visible over the canvas */
-    .text-layer span::selection {
-      background: rgba(0, 120, 255, 0.35);
-    }
+    .text-layer span::selection { background: rgba(0, 120, 255, 0.35); }
 
-    /* ── Custom find bar ───────────────────────────────────────────────── */
+    /* ── Custom find bar ───────────────────────────────────────────────────── */
     #find-bar {
       position: fixed;
-      top: 56px;
+      top: 52px;
       right: 24px;
       z-index: 200;
       display: flex;
@@ -167,8 +207,24 @@
     #find-bar button:hover { background: #4a4a4a; }
     #find-bar button:disabled { opacity: 0.4; cursor: default; }
 
-    /* Highlight boxes: translucent fill (text stays readable) + a contrasting
-       outline so they're visible even on colorful page backgrounds. */
+    #lang-select {
+      background: #3a3a3a;
+      color: #ddd;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .find-sep {
+      width: 1px;
+      height: 18px;
+      background: #555;
+      flex-shrink: 0;
+    }
+
+    /* ── Highlights ────────────────────────────────────────────────────────── */
     .find-highlight {
       position: absolute;
       background: rgba(255, 235, 59, 0.45);
@@ -178,8 +234,6 @@
       pointer-events: none;
       z-index: 5;
     }
-    /* Active match: bold red ring framed in white — pops on any background — plus
-       a brief pulse so it's obvious where navigation jumped to. */
     .find-highlight.active {
       background: rgba(255, 90, 0, 0.55);
       outline: 2px solid #ffffff;
@@ -189,35 +243,105 @@
     }
     @keyframes fii-pulse {
       0%, 100% { box-shadow: 0 0 0 3px #ff1744, 0 0 0 0 rgba(255, 23, 68, 0.0); }
-      50%      { box-shadow: 0 0 0 3px #ff1744, 0 0 14px 5px rgba(255, 23, 68, 0.85); }
+      50%       { box-shadow: 0 0 0 3px #ff1744, 0 0 14px 5px rgba(255, 23, 68, 0.85); }
+    }
+
+    /* ── Custom right-click context menu ───────────────────────────────────── */
+    #ctx-menu {
+      position: fixed;
+      z-index: 1000;
+      background: #2d2d2d;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 4px 0;
+      min-width: 180px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+      font-size: 13px;
+    }
+    #ctx-menu[hidden] { display: none; }
+
+    #ctx-menu button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: #e8eaed;
+      padding: 8px 16px;
+      cursor: pointer;
+      text-align: left;
+    }
+    #ctx-menu button:hover { background: rgba(255,255,255,0.08); }
+
+    #ctx-menu .ctx-icon {
+      font-size: 14px;
+      width: 16px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    #ctx-menu hr {
+      border: none;
+      border-top: 1px solid #444;
+      margin: 4px 0;
     }
   </style>
 </head>
 <body>
+
+  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
   <div id="toolbar">
-    <span>Find in Images — PDF Viewer</span>
-    <span id="status">Loading...</span>
-    <span id="lang-label">OCR language:</span>
-    <select id="lang-select" title="OCR language — changing this reprocesses the document">
-      <option value="eng">English</option>
-      <option value="dan">Danish</option>
-      <option value="eng+dan">English + Danish</option>
-    </select>
-    <button id="reprocess" title="Clear cached OCR for all documents and reload">Clear cache</button>
+    <!-- Page navigation -->
+    <button id="page-prev" title="Previous page" disabled>&#8249;</button>
+    <input  id="page-input" type="number" min="1" value="1" title="Current page" />
+    <span   id="page-total">/ —</span>
+    <button id="page-next" title="Next page" disabled>&#8250;</button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Zoom -->
+    <button id="zoom-out" title="Zoom out">&#8722;</button>
+    <span   id="zoom-level">100%</span>
+    <button id="zoom-in"  title="Zoom in">&#43;</button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Download & Print -->
+    <a id="download-btn" class="tb-btn" href="" download title="Download PDF">
+      &#8595; Download
+    </a>
+    <button id="print-btn" title="Print (opens in native viewer)">&#128424; Print</button>
   </div>
 
+  <!-- ── Find bar ────────────────────────────────────────────────────────── -->
   <div id="find-bar" hidden>
     <input id="find-input" type="text" placeholder="Find in document" autocomplete="off" />
-    <span id="find-count">0/0</span>
+    <span  id="find-count">0/0</span>
     <button type="button" id="find-prev" title="Previous match (Shift+Enter / ↑)">&#9650;</button>
     <button type="button" id="find-next" title="Next match (Enter / ↓)">&#9660;</button>
+    <div class="find-sep"></div>
+    <select id="lang-select" title="OCR language — changing this re-indexes the document">
+      <option value="eng">EN</option>
+      <option value="dan">DA</option>
+      <option value="eng+dan">EN+DA</option>
+    </select>
     <button type="button" id="find-close" title="Close (Esc)">&#10005;</button>
   </div>
 
-  <div id="viewer-container"></div>
+  <!-- ── Viewer ──────────────────────────────────────────────────────────── -->
+  <div id="viewer-container">
+    <div id="error-message"></div>
+  </div>
 
-  <!-- Load Tesseract as a regular script so it creates a reliable window.Tesseract global.
-       Dynamic ESM imports of bundled files can be blocked by MV3 CSP. -->
+  <!-- ── Custom context menu ─────────────────────────────────────────────── -->
+  <div id="ctx-menu" hidden>
+    <button id="ctx-download"><span class="ctx-icon">&#8595;</span> Download PDF</button>
+    <button id="ctx-print">   <span class="ctx-icon">&#128424;</span> Print</button>
+    <hr />
+    <button id="ctx-open">    <span class="ctx-icon">&#8599;</span> Open original in new tab</button>
+  </div>
+
   <script src="../lib/tesseract/tesseract.min.js"></script>
   <script type="module" src="viewer.js"></script>
 </body>

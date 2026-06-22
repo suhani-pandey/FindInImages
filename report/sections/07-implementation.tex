@@ -4,39 +4,49 @@
 This section walks through the pipeline stage by stage. Code excerpts are drawn
 from the extension's source and lightly trimmed for space.
 
-\subsection{Extension Structure and PDF Interception}
+\subsection{Extension Structure and On-Demand Activation}
 The extension is a Manifest~V3 package. Its content security policy permits
 \code{wasm-unsafe-eval} so the bundled Tesseract WebAssembly core can run, and
 the OCR engine, language data, and PDF.js are declared as web-accessible
 resources so the viewer can load them offline---no CDN fetch occurs at runtime.
 
-On installation, the service worker registers a single dynamic
-\code{declarativeNetRequest} rule. The extension's runtime ID is not known until
-install time, so the rule is created programmatically rather than statically
-(Listing~\ref{lst:redirect}). The regular expression matches \code{http},
-\code{https}, and \code{file} URLs ending in \code{.pdf}, and the
-\code{regexSubstitution} of \code{\textbackslash0} folds the entire matched URL
-into the viewer's \code{?url=} parameter.
+Activation is on demand (decision~\ref{dec:ondemand}): Chrome's native viewer
+shows every PDF, and the service worker stays dormant until the user invokes the
+extension. Two entry points---the toolbar icon (\code{action.onClicked}) and a
+browser-global keyboard shortcut (\code{commands.onCommand}, default
+\code{Ctrl+Shift+F} / \code{Cmd+Shift+F})---run one shared handler
+(Listing~\ref{lst:activate}). It switches the active tab to the custom viewer with
+the PDF's URL preserved as a \code{?url=} parameter; if the tab is \emph{already}
+the viewer, it switches back to the native viewer, so the same gesture toggles
+between the two.
 
-\begin{lstlisting}[caption={Dynamic \code{declarativeNetRequest} rule installed at extension startup: intercepts \code{.pdf} URLs and redirects them to the custom viewer, embedding the original URL as a \code{?url=} parameter (\code{service-worker.js}).}, label={lst:redirect}]
-await chrome.declarativeNetRequest.updateDynamicRules({
-  removeRuleIds: [1],
-  addRules: [{
-    id: 1, priority: 1,
-    action: { type: "redirect",
-      redirect: { regexSubstitution: `${viewerBase}?url=\\0` } },
-    condition: {
-      regexFilter: "^(https?|file)://.*\\.pdf(\\?.*)?$",
-      resourceTypes: ["main_frame", "sub_frame"],
-    },
-  }],
+\begin{lstlisting}[caption={On-demand activation: the toolbar icon and the keyboard shortcut both run one handler that toggles the active tab between the native viewer and the custom OCR viewer (\code{service-worker.js}).}, label={lst:activate}]
+function toggleViewer(tab) {
+  // Already in our viewer? Switch back to Chrome's native viewer.
+  const original = originalUrlFromViewer(tab.url);
+  if (original) return chrome.tabs.update(tab.id, { url: original });
+  // A PDF? Open it in the OCR viewer, preserving the URL as ?url=.
+  if (isPdfUrl(tab.url))
+    chrome.tabs.update(tab.id, { url: viewerUrlFor(tab.url) });
+}
+
+chrome.action.onClicked.addListener(toggleViewer);        // toolbar icon
+chrome.commands.onCommand.addListener((cmd, tab) => {     // Ctrl+Shift+F
+  if (cmd === "toggle-search") toggleViewer(tab);
 });
 \end{lstlisting}
 
-The viewer then reads the original URL from its query string. Because
-\code{URLSearchParams} percent-decodes values, the raw string is re-encoded with
-\code{encodeURI} before being handed to PDF.js, preserving spaces and special
-characters in the path while leaving URL syntax intact.
+Local \code{file://} PDFs additionally require the per-extension ``Allow access to
+file URLs'' setting; if it is off, the handler opens the extension's details page
+(where the toggle lives) instead of a viewer that would fail to load.
+
+The viewer reads the original URL from its query string. The service worker writes
+it with \code{encodeURIComponent}, so \code{URLSearchParams.get} decodes it back to
+the exact original URL---which is then handed to PDF.js \emph{as-is}. It is
+important \emph{not} to re-encode at this point: passing the already-valid URL
+through \code{encodeURI} would escape each \code{\%} and turn a path segment like
+\code{Personal\%20Projects} into \code{Personal\%2520Projects}, breaking
+\code{file://} loads.
 
 \subsection{Lazy Rendering Pipeline}
 Rendering and OCR-ing every page up front would block on large documents.

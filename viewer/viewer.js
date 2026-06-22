@@ -1,6 +1,6 @@
 import * as pdfjsLib from "../lib/pdfjs/pdf.min.mjs";
 import { injectPDFTextLayer, appendOCRTextLayer, filterOverlappingWords } from "./text-layer.js";
-import { getCachedPage, setCachedPage, clearCache } from "./cache.js";
+import { getCachedPage, setCachedPage } from "./cache.js";
 import { postProcessWords } from "./ocr-postprocess.js";
 
 // Operator codes that indicate the page paints a raster image (may contain text)
@@ -20,10 +20,132 @@ const TESSERACT_CORE_PATH   = chrome.runtime.getURL("lib/tesseract/");
 // Bundled eng.traineddata.gz lives here — fully offline, no CDN fetch
 const TESSERACT_LANG_PATH   = chrome.runtime.getURL("lib/tesseract/lang");
 
-const status     = document.getElementById("status");
-const container  = document.getElementById("viewer-container");
-const reprocessBtn = document.getElementById("reprocess");
-const langSelect = document.getElementById("lang-select");
+const container   = document.getElementById("viewer-container");
+const errorDiv    = document.getElementById("error-message");
+const langSelect  = document.getElementById("lang-select");
+
+// ── Toolbar ──────────────────────────────────────────────────────────────────
+const pagePrev    = document.getElementById("page-prev");
+const pageNext    = document.getElementById("page-next");
+const pageInput   = document.getElementById("page-input");
+const pageTotal   = document.getElementById("page-total");
+const zoomOutBtn  = document.getElementById("zoom-out");
+const zoomInBtn   = document.getElementById("zoom-in");
+const zoomLevel   = document.getElementById("zoom-level");
+const downloadBtn = document.getElementById("download-btn");
+const printBtn    = document.getElementById("print-btn");
+
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+let zoomIdx = ZOOM_STEPS.indexOf(1.0); // start at 100 %
+
+function applyZoom(idx) {
+  zoomIdx = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx));
+  const z = ZOOM_STEPS[zoomIdx];
+  container.style.zoom = z;
+  zoomLevel.textContent = Math.round(z * 100) + "%";
+  zoomOutBtn.disabled = zoomIdx === 0;
+  zoomInBtn.disabled  = zoomIdx === ZOOM_STEPS.length - 1;
+}
+
+zoomOutBtn.addEventListener("click", () => applyZoom(zoomIdx - 1));
+zoomInBtn.addEventListener("click",  () => applyZoom(zoomIdx + 1));
+applyZoom(zoomIdx); // set initial state
+
+printBtn.addEventListener("click", () => {
+  // Open the original PDF URL in a new tab so Chrome's native viewer handles
+  // printing — it has access to the real PDF bytes, we only have canvas pixels.
+  window.open(rawUrl, "_blank");
+});
+
+// ── Page-number tracking ─────────────────────────────────────────────────────
+// Updated by initToolbarForDoc() once the PDF is loaded.
+let totalPages = 0;
+
+function scrollToPage(pageNum) {
+  const wrapper = container.querySelector(`.page-wrapper[data-page-num="${pageNum}"]`);
+  if (wrapper) wrapper.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function syncPageInput(pageNum) {
+  pageInput.value = pageNum;
+  pagePrev.disabled = pageNum <= 1;
+  pageNext.disabled = pageNum >= totalPages;
+}
+
+function initToolbarForDoc(total, url) {
+  totalPages = total;
+  pageTotal.textContent = `/ ${total}`;
+  pageInput.max = total;
+  pagePrev.disabled = true;
+  pageNext.disabled = total <= 1;
+
+  downloadBtn.href     = url;
+  downloadBtn.download = decodeURIComponent(url.split("/").pop().split("?")[0]) || "document.pdf";
+
+  pagePrev.addEventListener("click", () => {
+    const n = Math.max(1, parseInt(pageInput.value) - 1);
+    syncPageInput(n);
+    scrollToPage(n);
+  });
+  pageNext.addEventListener("click", () => {
+    const n = Math.min(total, parseInt(pageInput.value) + 1);
+    syncPageInput(n);
+    scrollToPage(n);
+  });
+  pageInput.addEventListener("change", () => {
+    const n = Math.max(1, Math.min(total, parseInt(pageInput.value) || 1));
+    syncPageInput(n);
+    scrollToPage(n);
+  });
+
+  // Track the page closest to the top of the viewport as the user scrolls.
+  let rafPending = false;
+  window.addEventListener("scroll", () => {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      const wrappers = container.querySelectorAll(".page-wrapper[data-page-num]");
+      let best = 1, bestDist = Infinity;
+      for (const w of wrappers) {
+        const rect = w.getBoundingClientRect();
+        const dist = Math.abs(rect.top);
+        if (dist < bestDist) { bestDist = dist; best = parseInt(w.dataset.pageNum); }
+      }
+      syncPageInput(best);
+    });
+  }, { passive: true });
+}
+
+// ── Right-click context menu ─────────────────────────────────────────────────
+const ctxMenu        = document.getElementById("ctx-menu");
+const ctxDownloadBtn = document.getElementById("ctx-download");
+const ctxPrintBtn    = document.getElementById("ctx-print");
+const ctxOpenBtn     = document.getElementById("ctx-open");
+
+function showCtxMenu(x, y) {
+  ctxMenu.hidden = false;
+  // Keep menu inside the viewport
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const mw = ctxMenu.offsetWidth  || 180;
+  const mh = ctxMenu.offsetHeight || 120;
+  ctxMenu.style.left = `${Math.min(x, vw - mw - 8)}px`;
+  ctxMenu.style.top  = `${Math.min(y, vh - mh - 8)}px`;
+}
+
+document.addEventListener("contextmenu", (e) => {
+  // Only intercept right-clicks on the rendered page area (canvas / text layer)
+  if (!e.target.closest(".page-wrapper")) return;
+  e.preventDefault();
+  showCtxMenu(e.clientX, e.clientY);
+});
+
+document.addEventListener("click", () => { ctxMenu.hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") ctxMenu.hidden = true; });
+
+ctxDownloadBtn.addEventListener("click", () => { downloadBtn.click(); ctxMenu.hidden = true; });
+ctxPrintBtn.addEventListener("click",    () => { printBtn.click();    ctxMenu.hidden = true; });
+ctxOpenBtn.addEventListener("click",     () => { window.open(rawUrl, "_blank"); ctxMenu.hidden = true; });
 
 // ── OCR language selection ───────────────────────────────────────────────────
 // Persisted in localStorage. Default to English. Allowed values match the
@@ -37,18 +159,6 @@ langSelect.addEventListener("change", () => {
   localStorage.setItem("fii_ocr_lang", langSelect.value);
   // OCR results are cached per-language, so just reload to reprocess with the
   // new language (cache hits make previously-seen languages instant).
-  location.reload();
-});
-
-// Clear cache button — wipe all cached OCR and reload to reprocess from scratch
-reprocessBtn.addEventListener("click", async () => {
-  reprocessBtn.disabled = true;
-  reprocessBtn.textContent = "Clearing…";
-  try {
-    await clearCache();
-  } catch (err) {
-    console.warn("[FindInImages] clearCache failed:", err);
-  }
   location.reload();
 });
 
@@ -166,8 +276,10 @@ findNext.addEventListener("mousedown", (e) => e.preventDefault());
 findPrev.addEventListener("mousedown", (e) => e.preventDefault());
 
 window.addEventListener("keydown", (e) => {
-  // Ctrl/Cmd+F opens the find bar from anywhere
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+  // Ctrl/Cmd+F opens the find bar. We require Shift to be UP so that
+  // Ctrl/Cmd+Shift+F stays free for the browser-global "toggle back to the
+  // native viewer" command (handled by the service worker).
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
     e.preventDefault();
     openFindBar();
     return;
@@ -198,19 +310,30 @@ window.addEventListener("keydown", (e) => {
 });
 
 // ── Resolve PDF URL ──────────────────────────────────────────────────────────
-// URLSearchParams.get() already percent-decodes the value, which gives us
-// a string with literal spaces — valid for display but not for fetch().
-// encodeURI re-encodes spaces/special chars while leaving :// / ? & intact.
+// The service worker passes the PDF URL through encodeURIComponent, so
+// URLSearchParams.get() decodes it back to the original, already-valid URL
+// (e.g. spaces stay as %20). We must NOT re-encode it — encodeURI() would turn
+// each %20 into %2520 (it escapes "%"), breaking the path. We normalize via the
+// URL constructor only to tidy any stray literal spaces, then use it as-is.
 const params = new URLSearchParams(window.location.search);
 const rawUrl  = params.get("url") || params.get("file");
-const pdfUrl  = rawUrl ? encodeURI(rawUrl) : null;
+let pdfUrl = null;
+if (rawUrl) {
+  try { pdfUrl = new URL(rawUrl).href; }
+  catch { pdfUrl = rawUrl; }
+}
 
 // Cache is scoped per document AND per OCR language, so switching languages
 // reprocesses (and remembers) each language independently.
 const cacheDocId = `${pdfUrl}::${OCR_LANG}`;
 
+function showError(msg) {
+  errorDiv.textContent = msg;
+  errorDiv.style.display = "block";
+}
+
 if (!pdfUrl) {
-  status.textContent = "No PDF loaded. Open a .pdf link in Chrome to use this viewer.";
+  showError("No PDF loaded. Open a .pdf link in Chrome to use this viewer.");
 } else {
   loadPDF(pdfUrl);
 }
@@ -224,20 +347,43 @@ const renderedPages = new Set();
 let pageObserver = null;
 
 async function loadPDF(url) {
-  status.textContent = "Loading PDF…";
-
   try {
     pdfDoc = await pdfjsLib.getDocument({ url }).promise;
   } catch (err) {
-    const isFileUrl = url.startsWith("file://");
-    status.textContent = isFileUrl
-      ? `Cannot load local file. In chrome://extensions → Find in Images → enable "Allow access to file URLs", then reload.`
-      : `Failed to load PDF: ${err.message}`;
-    console.error("[FindInImages] PDF load error:", err);
+    const detail = `${err && err.name ? err.name + ": " : ""}${(err && err.message) || err}`;
+    if (url.startsWith("file://")) {
+      showError(
+        `Couldn't load this local file.\n\n` +
+        `If you haven't yet: open chrome://extensions → Find in Images → Details, ` +
+        `enable "Allow access to file URLs", then reload THIS tab (Cmd/Ctrl+R).\n\n` +
+        `Details — ${detail}`
+      );
+    } else {
+      showError(`Failed to load PDF.\n\nDetails — ${detail}`);
+    }
+    console.error("[FindInImages] PDF load error:", err, "url:", url);
     return;
   }
 
   const total = pdfDoc.numPages;
+
+  // Set the tab title to the PDF's own title (from metadata), falling back to
+  // the filename from the URL so the user sees the real document name.
+  try {
+    const { info } = await pdfDoc.getMetadata();
+    const metaTitle = info && info.Title && info.Title.trim();
+    if (metaTitle) {
+      document.title = metaTitle;
+    } else {
+      const filename = decodeURIComponent(rawUrl.split("/").pop().split("?")[0]);
+      document.title = filename || "PDF Viewer";
+    }
+  } catch {
+    const filename = decodeURIComponent(rawUrl.split("/").pop().split("?")[0]);
+    document.title = filename || "PDF Viewer";
+  }
+
+  initToolbarForDoc(total, url);
 
   // Estimate placeholder size from page 1 so the scrollbar reserves the right
   // space. Each page's exact size is applied when it actually renders.
@@ -260,8 +406,6 @@ async function loadPDF(url) {
     container.appendChild(wrapper);
     pageObserver.observe(wrapper);
   }
-
-  status.textContent = `${total} page${total > 1 ? "s" : ""} — loading…`;
 
   // Native Ctrl+F can only find text that's in the DOM, so lazy-rendering alone
   // would make off-screen pages unsearchable. This background pass processes the
@@ -294,9 +438,7 @@ function startBackgroundIndexing(total) {
         .catch((err) => console.error(`[FindInImages] background index error on page ${pageNum}:`, err))
         .finally(() => {
           active--;
-          if (next > total && active === 0) {
-            status.textContent = `All ${total} page${total > 1 ? "s" : ""} ready — Ctrl+F to search`;
-          } else {
+          if (next <= total || active > 0) {
             idle(pump);
           }
         });
@@ -489,10 +631,6 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
   const hasImages = await pageHasImages(page);
   const shouldOCR = hasImages || pdfBoxes.length === 0;
 
-  console.log(
-    `[FindInImages] Page ${pageNum}: ${pdfBoxes.length} PDF text items, hasImages=${hasImages}, OCR=${shouldOCR}`
-  );
-
   // 3. Normal text page with no images — nothing to OCR.
   if (!shouldOCR) {
     updateStatus(pageNum, total, "text");
@@ -503,9 +641,7 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
   //    Cached words are normalized (0..1) so they're independent of DPR / scale.
   let normWords = await getCachedPage(cacheDocId, pageNum);
 
-  if (normWords) {
-    console.log(`[FindInImages] Page ${pageNum}: cache hit (${normWords.length} words)`);
-  } else {
+  if (!normWords) {
     updateStatus(pageNum, total, "ocr-start");
 
     // Render a dedicated HIGH-RESOLUTION canvas for OCR. The display canvas is
@@ -526,9 +662,6 @@ async function processTextLayer(page, canvas, textLayerDiv, viewport, pageNum, t
     const words = postProcessWords(rawWords);
     normWords = normalizeWords(words, ocrW, ocrH);
     await setCachedPage(cacheDocId, pageNum, normWords);
-    console.log(
-      `[FindInImages] Page ${pageNum}: OCR ${rawWords.length} raw → ${words.length} words @ ${ocrW}px wide (cached)`
-    );
   }
 
   // Denormalize to the text layer's CSS-pixel space (viewport size), NOT the
@@ -589,7 +722,6 @@ function getOCRScheduler() {
       throw new Error("Tesseract not loaded — check that tesseract.min.js is in lib/tesseract/");
     }
 
-    console.log(`[FindInImages] Starting OCR scheduler: ${OCR_WORKERS} worker(s), lang=${OCR_LANG}`);
     const scheduler = window.Tesseract.createScheduler();
 
     // Sparse-text page segmentation: "find as much text as possible, in no
@@ -613,7 +745,6 @@ function getOCRScheduler() {
     );
     workers.forEach((w) => scheduler.addWorker(w));
 
-    console.log(`[FindInImages] OCR scheduler ready (${scheduler.getNumWorkers()} workers)`);
     return scheduler;
   })();
 
@@ -623,7 +754,6 @@ function getOCRScheduler() {
 async function runOCR(canvas, pageNum) {
   try {
     const scheduler = await getOCRScheduler();
-    console.log(`[FindInImages] Page ${pageNum}: queued for OCR…`);
 
     // Tesseract.js v5+ omits detailed results by default — request blocks so we
     // get the block→paragraph→line→word hierarchy with per-word bounding boxes.
@@ -657,14 +787,4 @@ function flattenWords(blocks) {
   return words;
 }
 
-// ── Status helpers ───────────────────────────────────────────────────────────
-function updateStatus(pageNum, total, phase) {
-  const p = `(page ${pageNum}/${total})`;
-  const msg = {
-    "text":      `Text layer ready ${p} — Ctrl+F to search`,
-    "ocr-start": `Running OCR ${p}…`,
-    "ocr-done":  `OCR complete ${p} — Ctrl+F to search`,
-    "ocr-empty": `OCR found no text ${p}`,
-  }[phase];
-  if (msg) status.textContent = msg;
-}
+function updateStatus(_pageNum, _total, _phase) { /* toolbar removed */ }

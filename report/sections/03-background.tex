@@ -42,13 +42,13 @@ Manifest~V3~\cite{mv3} is the current Chrome extension architecture. The
 components relevant here are:
 \begin{itemize}
   \item \textbf{Service worker} --- an event-driven background script (replacing
-        persistent background pages) used here to register network rules on
-        install.
-  \item \textbf{\code{declarativeNetRequest}}~\cite{dnr} --- a declarative API
-        for redirecting or blocking requests without intercepting their contents,
-        used to reroute PDF navigations to the custom viewer.
-  \item \textbf{Content scripts} --- scripts injected into web pages, reserved
-        here for future handling of image text on ordinary pages.
+        persistent background pages) used here to respond to the user's
+        activation gesture and switch the current tab to the custom viewer.
+  \item \textbf{\code{chrome.action} and \code{chrome.commands}} --- the toolbar
+        button and a browser-global keyboard shortcut, respectively. These are the
+        two ways the user invokes the OCR viewer on a PDF; the design rationale
+        for activating \emph{on demand} (rather than auto-intercepting every PDF)
+        is discussed in Section~\ref{sec:design}.
   \item \textbf{Web-accessible resources} and a \textbf{content security policy}
         permitting \code{wasm-\allowbreak unsafe-\allowbreak eval}, required so the bundled
         WebAssembly OCR core can execute.

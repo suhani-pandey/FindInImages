@@ -4,11 +4,12 @@
 \proj{} demonstrates that the most effective way to make a scanned or image-based
 document searchable in the browser is not to build a search engine, but to
 \emph{make the document into real text} and let the browser do what it already
-does well. Built as a fully client-side Manifest~V3 Chrome extension, the system
-intercepts PDF navigations, renders pages with PDF.js, recovers missing text with
-in-browser Tesseract.js OCR, and injects an invisible, precisely-aligned text
-layer that native search, selection, and copy all operate on directly---without
-any server round-trip or data leaving the user's machine.
+does well. Built as a fully client-side Manifest~V3 Chrome extension, the system leaves
+Chrome's native PDF viewer in place and, when the user invokes it on demand,
+renders pages with PDF.js, recovers missing text with in-browser Tesseract.js OCR,
+and injects an invisible, precisely-aligned text layer that native search,
+selection, and copy all operate on directly---without any server round-trip or
+data leaving the user's machine.
 
 The project's depth lies in the parts that are easy to underestimate. Aligning
 recovered text with the rendered page is a four-space coordinate problem solved
