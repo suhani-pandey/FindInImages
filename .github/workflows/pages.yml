@@ -1,0 +1,63 @@
+name: Deploy documentation to GitHub Pages
+
+# Publishes a small static site to GitHub Pages:
+#   /            → landing page (site/index.html)
+#   /report/     → the formal report viewer (report/index.html + main.pdf)
+#   /docs/       → the technical documentation PDF
+#
+# The PDFs are committed build artifacts (built locally with report/build.sh and
+# `node docs/build.mjs`), so this workflow only assembles and deploys them.
+#
+# One-time setup: repo Settings → Pages → Build and deployment → Source = "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "report/index.html"
+      - "report/main.pdf"
+      - "docs/DOCUMENTATION.pdf"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment; don't cancel an in-progress run.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          mkdir -p _site/report _site/docs
+          cp site/index.html        _site/index.html
+          cp report/index.html      _site/report/index.html
+          cp report/main.pdf        _site/report/main.pdf
+          cp docs/DOCUMENTATION.pdf _site/docs/DOCUMENTATION.pdf
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

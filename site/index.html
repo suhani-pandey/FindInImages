@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Find in Images — Documentation</title>
+  <meta name="description" content="Find in Images — a Chrome extension that makes scanned and image-based PDFs searchable with Ctrl+F. Project report and technical documentation." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #f6f8fa;
+      color: #1f2937;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px;
+      line-height: 1.6;
+    }
+
+    .wrap { width: 100%; max-width: 880px; }
+
+    .hero { text-align: center; margin-bottom: 44px; }
+
+    .lens { margin: 0 auto 18px; display: block; }
+
+    .kicker {
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: #6b7280; font-size: 12px; font-weight: 700;
+    }
+
+    h1 { font-size: clamp(28px, 5vw, 40px); color: #0f172a; margin: 10px 0 12px; letter-spacing: -0.5px; }
+
+    .sub { font-size: 16px; color: #475569; max-width: 620px; margin: 0 auto; }
+
+    .stack { margin-top: 18px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .tag { font-size: 11px; font-weight: 700; padding: 3px 11px; border-radius: 20px; color: #fff; }
+    .t-blue { background: #2563eb; } .t-purple { background: #7c3aed; }
+    .t-teal { background: #0d9488; } .t-amber { background: #d97706; } .t-green { background: #16a34a; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 22px; }
+
+    .card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+      padding: 26px; display: flex; flex-direction: column;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+
+    .card .icon { font-size: 26px; margin-bottom: 12px; }
+    .card h2 { font-size: 19px; color: #0f172a; margin-bottom: 8px; }
+    .card p { font-size: 14px; color: #57606a; flex: 1; margin-bottom: 20px; }
+
+    .links { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 16px; border-radius: 8px; font-size: 14px; font-weight: 600;
+      text-decoration: none; cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn-primary { background: #1F6FB2; color: #fff; }
+    .btn-ghost { background: #f1f5f9; color: #1F6FB2; }
+
+    footer {
+      margin-top: 48px; text-align: center; font-size: 13px; color: #6b7280;
+    }
+    footer a { color: #1F6FB2; font-weight: 600; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="hero">
+      <svg class="lens" width="84" height="84" viewBox="0 0 150 150" aria-hidden="true">
+        <circle cx="62" cy="62" r="40" fill="none" stroke="#2563eb" stroke-width="9"/>
+        <line x1="92" y1="92" x2="128" y2="128" stroke="#2563eb" stroke-width="11" stroke-linecap="round"/>
+        <text x="48" y="58" font-family="monospace" font-size="22" fill="#7c3aed" font-weight="700">A</text>
+        <text x="64" y="74" font-family="monospace" font-size="22" fill="#0d9488" font-weight="700">&#12354;</text>
+      </svg>
+      <div class="kicker">Chrome Extension &middot; Manifest V3</div>
+      <h1>Find in Images</h1>
+      <p class="sub">Making scanned and image-based PDFs searchable with Ctrl+F, through on-device OCR and an invisible DOM text overlay.</p>
+      <div class="stack">
+        <span class="tag t-blue">JavaScript ES6+</span>
+        <span class="tag t-purple">PDF.js</span>
+        <span class="tag t-teal">Tesseract.js</span>
+        <span class="tag t-amber">IndexedDB</span>
+        <span class="tag t-green">Canvas / DOM</span>
+      </div>
+    </div>
+
+    <div class="cards">
+
+      <div class="card">
+        <div class="icon">&#128220;</div>
+        <h2>Project Report</h2>
+        <p>The formal write-up: abstract, requirements, background, system design, development process, implementation, results, limitations, and conclusion.</p>
+        <div class="links">
+          <a class="btn btn-primary" href="report/">Read online &rarr;</a>
+          <a class="btn btn-ghost" href="report/main.pdf" download="Find-in-Images-Report.pdf">&#8595; PDF</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="icon">&#128296;</div>
+        <h2>Technical Documentation</h2>
+        <p>Architecture and design rationale with diagrams: the OCR pipeline, component map, request sequence, coordinate mapping, per-page processing, and performance strategy.</p>
+        <div class="links">
+          <a class="btn btn-primary" href="docs/DOCUMENTATION.pdf">Open &rarr;</a>
+          <a class="btn btn-ghost" href="docs/DOCUMENTATION.pdf" download="Find-in-Images-Documentation.pdf">&#8595; PDF</a>
+        </div>
+      </div>
+
+    </div>
+
+    <footer>
+      <p>Built by Suhani Pandey &middot; <a href="https://github.com/suhani-pandey/FindInImages">View source on GitHub</a></p>
+    </footer>
+
+  </div>
+</body>
+</html>
