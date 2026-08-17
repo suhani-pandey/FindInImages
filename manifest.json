@@ -1,14 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Find in Images",
-  "version": "1.0.0",
-  "description": "Makes scanned PDFs and image-based documents searchable using Ctrl+F via OCR and DOM text injection.",
+  "version": "2.0.0",
+  "description": "Press Ctrl+Shift+F on a scanned PDF: OCR embeds an invisible text layer and reopens it in Chrome's own viewer, so the normal Ctrl+F finds text inside images.",
 
   "icons": {
     "16":  "icons/icon16.png",
     "48":  "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+
+  "permissions": [
+    "offscreen",
+    "storage",
+    "contextMenus"
+  ],
 
   "host_permissions": [
     "<all_urls>"
@@ -17,13 +23,6 @@
   "background": {
     "service_worker": "service-worker.js"
   },
-
-  "web_accessible_resources": [
-    {
-      "resources": ["viewer/viewer.html", "viewer/*", "lib/pdfjs/*", "lib/tesseract/*", "lib/tesseract/lang/*"],
-      "matches": ["<all_urls>"]
-    }
-  ],
 
   "action": {
     "default_title": "Search this PDF with OCR (Ctrl+Shift+F / ⌘⇧F)",
@@ -40,7 +39,7 @@
         "default": "Ctrl+Shift+F",
         "mac": "Command+Shift+F"
       },
-      "description": "Search text in this PDF (switch to / from the OCR viewer)"
+      "description": "Make this PDF searchable with OCR (or restore the original)"
     }
   },
 
