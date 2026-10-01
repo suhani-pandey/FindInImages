@@ -5,7 +5,7 @@ Every part of \proj{} runs on the client, inside the browser. The system is
 assembled from a small set of web technologies, each chosen for one job, and the
 engineering value is largely in how they are \emph{coordinated}. This section
 catalogues the stack, explains how each piece is used, and then shows how they
-fit together as a single pipeline.
+fit together.
 
 \subsection{The Stack at a Glance}
 Table~\ref{tab:stack} lists each technology, the single job it performs, and the
@@ -19,123 +19,123 @@ each one is used.
   \label{tab:stack}
   \renewcommand{\arraystretch}{1.3}
   {\small
-  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.7cm} X >{\raggedright\arraybackslash}p{2.4cm}@{}}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.7cm} X >{\raggedright\arraybackslash}p{2.6cm}@{}}
     \toprule
     \textbf{Technology} & \textbf{Role in the project} & \textbf{Where} \\
     \midrule
-    Chrome Extension (MV3) & Packaging, lifecycle, and the permission/CSP model that lets WASM OCR run & \code{manifest.json} \\
-    Service worker + \code{chrome.\allowbreak action} / \code{chrome.\allowbreak commands} & Activates the OCR viewer on demand (toolbar click or keyboard shortcut) and switches the tab to it & \code{service-\allowbreak worker.js} \\
-    PDF.js (\code{pdfjs-dist}) & Parses and renders pages; supplies native text and image-operator info & \code{viewer.js} \\
-    HTML5 Canvas API & Rasterization target --- both the on-screen page and the offscreen OCR image & \code{viewer.js} \\
-    Tesseract.js (WASM) & Optical character recognition on image pages & \code{viewer.js} \\
-    Web Workers + scheduler & Run OCR off the main thread, several pages at once & \code{viewer.js} \\
-    IndexedDB & Persistent, resolution-independent cache of OCR results & \code{cache.js} \\
-    \code{localStorage} & Remembers the chosen OCR language & \code{viewer.js} \\
-    DOM + \code{Range} / \code{Intersection\allowbreak Observer} / \code{request\allowbreak IdleCallback} & Text-layer overlay, find-highlight geometry, lazy render, idle indexing & \code{viewer.js}, \code{text-\allowbreak layer.js} \\
+    Chrome Extension (MV3) & Packaging, permissions, and the CSP that lets WASM OCR run & \code{manifest.json} \\
+    Service worker + \code{chrome.\allowbreak action} / \code{chrome.\allowbreak commands} & Trigger, per-tab progress badge, tab switch, and serving the searchable copy & \code{service-\allowbreak worker.js} \\
+    Offscreen document & Hidden page with a DOM that hosts the whole pipeline & \code{offscreen/\allowbreak offscreen.js} \\
+    PDF.js & Detects text and images per page; renders pages for OCR & \code{processor.js}, \code{ocr.js} \\
+    HTML5 Canvas & OCR raster target and pixel-level preprocessing & \code{ocr.js} \\
+    Tesseract.js (WASM) + Web Workers & Optical character recognition on a pool of workers & \code{ocr.js} \\
+    pdf-lib & Writes the invisible text layer into the copy and saves it & \code{embed.js} \\
+    Web Crypto (SHA-256) & Content-based document identity & \code{cache.js} \\
+    IndexedDB & Persistent OCR result cache with LRU pruning & \code{cache.js} \\
+    Cache Storage & Holds searchable copies, served at extension URLs & \code{offscreen.js}, \code{service-\allowbreak worker.js} \\
+    \code{chrome.storage}, \code{chrome.\allowbreak contextMenus} & OCR language and open copies; the language menu & \code{service-\allowbreak worker.js} \\
+    Chrome's native PDF viewer & All display, find, highlighting, selection, and printing & (Chrome) \\
     \bottomrule
   \end{tabularx}}
 \end{table}
 
 \subsection{How Each Technology Is Used}
 \begin{description}[leftmargin=1.4em, style=nextline]
-  \item[Chrome Extension (Manifest V3).] The \code{manifest.json} declares the
-        \code{storage} and \code{declarativeNetRequest} permissions, exposes the
-        viewer and bundled libraries as \code{web\_accessible\_resources}, and
-        sets a content security policy of \code{script-src 'self'
-        'wasm-\allowbreak unsafe-\allowbreak eval'} --- the last clause is what
-        permits Tesseract's WebAssembly core to execute inside the extension.
+  \item[Chrome Extension (Manifest V3).] \code{manifest.json} requests the
+        \code{offscreen}, \code{storage} and \code{contextMenus} permissions and
+        host access to fetch PDFs, sets a content security policy of
+        \code{script-src 'self' 'wasm-\allowbreak unsafe-\allowbreak eval'} so
+        Tesseract's WebAssembly core can execute, and requires Chrome~116 or
+        later (for \code{chrome.\allowbreak runtime.\allowbreak getContexts}). There are no
+        content scripts and no web-accessible resources: the extension never
+        touches web pages.
   \item[Service worker, \code{chrome.action} \& \code{chrome.commands}.] The
-        service worker stays dormant until the user invokes the extension on a
-        PDF---either by clicking the toolbar icon (\code{action.onClicked}) or by
-        pressing the keyboard shortcut (\code{commands.onCommand}, default
-        \code{Ctrl+Shift+F} / \code{Cmd+Shift+F}). Both
-        run the same handler, which switches the active tab to
-        \code{viewer.html?url=\dots}\ (or, if the tab is already the viewer,
-        switches it back to Chrome's native viewer). Section~\ref{sec:design}
-        explains why activation is on demand rather than automatic.
-  \item[PDF.js.] \code{getDocument(\{url\})} loads the file; per page,
-        \code{getViewport(\{scale\})} sizes it and \code{render()} draws it to a
-        canvas. \code{getTextContent()}
-        yields native text items, and \code{getOperatorList()} (checked against
-        \code{pdfjsLib.OPS} image operators) reveals whether a page paints
-        raster images. The \code{viewport.transform} matrix anchors the
-        coordinate mapping of Section~\ref{sec:design}.
-  \item[Canvas API.] Each page is rendered twice: an on-screen canvas whose
-        backing store is scaled by the device pixel ratio for sharpness, and a
-        separate offscreen canvas targeting $\sim$3000\,px wide for OCR. \code{getImageData}
-        / \code{putImageData} give the preprocessing stage pixel-level access.
-  \item[Tesseract.js.] Loaded as a UMD script that exposes \code{window.Tesseract}.
-        A \code{createScheduler()} fronts a pool of \code{createWorker()} LSTM
-        workers configured with \code{PSM.SPARSE\_TEXT}; an
-        \code{addJob("recognize")} call (with \code{blocks:true}) returns the
-        block\,$\to$\,word hierarchy with bounding boxes. The WASM cores and \code{eng}/\code{dan} language data
-        are bundled locally, so OCR is fully offline. Three language modes are
-        supported: English (\code{eng}), Danish (\code{dan}), and combined
-        English+Danish (\code{eng+dan}).
-  \item[Web Workers \& scheduler.] OCR is CPU-bound, so it never runs on the
-        main thread. The scheduler distributes pages across
-        $\min(4,\,\text{cores}{-}1)$ workers, keeping the UI responsive while
-        several pages recognize in parallel.
-  \item[IndexedDB.] \code{cache.js} stores each page's recognized words under a
-        \code{\$\{docId\}::\$\{pageNum\}} key, with coordinates normalized to the
-        unit square and a \code{FORMAT\_VER} stamp that invalidates results when
-        the pipeline changes.
-  \item[\code{localStorage} \& DOM APIs.] The OCR language is remembered in
-        \code{localStorage}. The recovered text becomes invisible \code{<span>}s;
-        \code{Range.getClientRects()} provides exact geometry for find
-        highlights; \code{IntersectionObserver} triggers lazy rendering; and
-        \code{requestIdleCallback} paces background indexing.
+        service worker sleeps until the user clicks the toolbar icon
+        (\code{action.onClicked}) or presses the shortcut
+        (\code{commands.onCommand}, \code{Ctrl+Shift+F}; Control+Shift+F on Mac).
+        It starts the offscreen document, sends it the job, mirrors progress as a
+        per-tab badge (an ellipsis, then a percentage, then a check mark, or a red \code{!} whose
+        tooltip explains the error), and finally navigates the tab to the copy.
+        Its \code{fetch} handler serves the copy's bytes, and invoking the
+        extension on a copy restores the original URL.
+  \item[Offscreen document.] Created with reason \code{WORKERS}, it provides the
+        DOM, canvas and Web Workers the pipeline needs. It processes one PDF at a
+        time from a queue and releases its OCR workers after a minute idle.
+  \item[PDF.js.] \code{getDocument(\{data\})} parses the downloaded bytes. Per
+        page, \code{getTextContent()} returns existing text,
+        \code{getOperatorList()} (checked against the \code{pdfjsLib.OPS} image
+        operators) reveals raster images, and \code{render()} rasterizes pages
+        that need OCR. \code{viewport.\allowbreak convertToPdfPoint} maps OCR pixels
+        back into PDF user space. PDF.js never displays anything to the user.
+  \item[Canvas API.] Each page needing OCR is rendered to an offscreen canvas
+        about 3000\,px wide, preprocessed through \code{getImageData} /
+        \code{putImageData}, and released immediately after recognition.
+  \item[Tesseract.js.] Loaded as a UMD script exposing \code{Tesseract}. A
+        \code{createScheduler()} fronts a pool of LSTM \code{createWorker()}
+        workers configured with \code{PSM.SPARSE\_TEXT}; \code{addJob("recognize")}
+        with \code{blocks:true} returns the block\,$\to$\,word hierarchy with
+        bounding boxes. The WASM core and the \code{eng}/\code{dan} language data
+        are bundled, so OCR is fully offline. Only the SIMD and plain LSTM cores
+        are shipped; the relaxed-SIMD core is disabled (Section~\ref{sec:process}).
+  \item[pdf-lib.] Loads the same bytes, embeds the standard Helvetica font once,
+        appends one invisible text object per recognized word to each page's
+        content stream, and saves the copy with metadata unchanged.
+  \item[Web Crypto, IndexedDB, Cache Storage.] \code{crypto.subtle.digest}
+        computes the SHA-256 of the downloaded file; IndexedDB stores each page's
+        recognized words under \code{hash::lang::page}; Cache Storage holds the
+        finished copy as an HTTP \code{Response}, keyed by its URL path.
+  \item[\code{chrome.storage} and \code{chrome.contextMenus}.] The OCR language
+        lives in \code{storage.local} and is chosen from radio items on the toolbar
+        icon's right-click menu; \code{storage.session} records which tab shows
+        which copy, so the copy can be deleted when that tab closes or navigates.
 \end{description}
 
 \subsection{Coordination Between Technologies}
-\code{viewer.js} is the orchestrator: it owns the page lifecycle and brokers
-every hand-off between the libraries. Figure~\ref{fig:integration} traces the
-data that crosses each boundary. On the user's trigger the service worker opens
-the PDF in the viewer;
-PDF.js rasterizes pages to canvas and reports their text and image operators;
-image pages are sent (as a high-resolution canvas) to the Tesseract worker pool,
-which returns words and boxes; those words are normalized and persisted to
-IndexedDB; and finally the orchestrator emits the invisible DOM text layer that
-the find bar searches. Each technology only ever talks to \code{viewer.js},
-which keeps the coupling between them loose and the data contracts explicit.
+Figure~\ref{fig:integration} traces the data that crosses each boundary. The
+service worker is the coordinator between the browser and the extension; the
+offscreen document's \code{processor.js} is the coordinator of the libraries.
+The two exchange only small messages---a job description going in, progress and
+a copy URL coming out---while the heavy bytes travel through Cache Storage, which
+both can reach because they share the extension's origin.
 
 \begin{figure}[ht]
   \centering
   \begin{tikzpicture}[
-      font=\small, node distance=10mm and 12mm,
+      font=\small,
       tech/.style={rectangle, rounded corners=2pt, draw=accent!70, fill=accent!6,
-                   align=center, minimum height=8mm, inner sep=4pt},
+                   align=center, minimum height=9mm, inner sep=4pt},
       hub/.style={rectangle, rounded corners=2pt, draw=accent!90, fill=accent!12,
-                  align=center, minimum height=9mm, inner sep=5pt, font=\small\bfseries},
+                  align=center, minimum height=10mm, inner sep=5pt, font=\small\bfseries},
       io/.style={rectangle, draw=rulegray, fill=codebg, align=center,
-                 minimum height=7mm, inner sep=4pt},
+                 minimum height=9mm, inner sep=4pt},
       a/.style={-{Stealth[length=2.2mm]}, draw=accent!80, semithick},
       b/.style={{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]}, draw=accent!80, semithick},
-      lbl/.style={font=\scriptsize\itshape, fill=white, inner sep=1pt},
+      lbl/.style={font=\scriptsize\itshape, fill=white, inner sep=1pt, align=center},
     ]
-    \node[io]  (req) {PDF in native\\viewer};
-    \node[tech, right=18mm of req] (sw) {Service worker\\\code{action} / \code{commands}};
-    \node[hub, below=12mm of sw] (viewer) {\code{viewer.js}\\orchestrator};
+    \node[io]   (tab)    at (-5.4, 0)   {PDF tab\\(Chrome's viewer)};
+    \node[hub]  (sw)     at (0, 0)      {Service worker};
+    \node[tech] (cs)     at (5.2, 0)    {Cache Storage\\(copies)};
+    \node[hub]  (off)    at (0, -3.0)   {Offscreen document\\\code{processor.js}};
+    \node[tech] (pdfjs)  at (-5.1, -5.5) {PDF.js};
+    \node[tech] (tess)   at (-1.75, -5.5) {Tesseract.js\\(Web Workers)};
+    \node[tech] (pdflib) at (1.75, -5.5) {pdf-lib};
+    \node[tech] (idb)    at (5.1, -5.5) {IndexedDB\\(OCR cache)};
 
-    \node[tech, left=of viewer]  (pdfjs) {PDF.js};
-    \node[tech, above=8mm of pdfjs] (canvas) {Canvas};
-    \node[tech, right=of viewer] (tess) {Tesseract.js\\(Web Workers)};
-    \node[tech, below left=12mm and 2mm of viewer] (idb) {IndexedDB\\cache};
-    \node[io,   below=14mm of viewer] (dom) {DOM text layer\\(invisible spans)};
-    \node[io,   below right=14mm and 2mm of viewer] (find) {Find bar};
-
-    \draw[a] (req) -- node[lbl,above,align=center]{\code{Ctrl+Shift+F}\\/ click} (sw);
-    \draw[a] (sw) -- node[lbl,right]{open \code{?url=}} (viewer);
-    \draw[b] (viewer) -- node[lbl,above,align=center]{render /\\text+ops} (pdfjs);
-    \draw[a] (pdfjs) -- node[lbl,right]{raster} (canvas);
-    \draw[b] (viewer) -- node[lbl,above,align=center]{hi-res canvas /\\words+bbox} (tess);
-    \draw[b] (viewer) -- node[lbl,left]{norm. words} (idb);
-    \draw[a] (viewer) -- node[lbl,right]{positioned spans} (dom);
-    \draw[b] (find) -- node[lbl,right]{query / matches} (dom);
+    \draw[a] ([yshift=2mm]tab.east) -- node[lbl,above]{\code{Ctrl+Shift+F} / click} ([yshift=2mm]sw.west);
+    \draw[a] ([yshift=-2mm]sw.west) -- node[lbl,below]{open copy URL} ([yshift=-2mm]tab.east);
+    \draw[b] (sw) -- node[lbl,above]{\code{fetch} / copy bytes} (cs);
+    \draw[a] ([xshift=-4mm]sw.south) -- node[lbl,left]{job: URL,\\language, cache key} ([xshift=-4mm]off.north);
+    \draw[a] ([xshift=4mm]off.north) -- node[lbl,right]{progress,\\done / error} ([xshift=4mm]sw.south);
+    \draw[a] (off.east) -- node[lbl,right=2pt]{store copy} (cs.south west);
+    \draw[b] (off) -- node[lbl,pos=0.72,above left]{detect / render} (pdfjs);
+    \draw[b] (off) -- node[lbl,left]{canvas /\\words + boxes} (tess);
+    \draw[a] (off) -- node[lbl,right]{invisible\\words} (pdflib);
+    \draw[b] (off) -- node[lbl,above right]{cached words} (idb);
   \end{tikzpicture}
-  \caption{Integration view. \code{viewer.js} acts as the sole orchestrator ---
-           every library and storage layer communicates only with it, so
-           inter-component coupling stays low. Arrow labels name the data crossing
-           each boundary; double-headed arrows indicate request--response pairs.}
+  \caption{Integration view. The service worker talks to the browser (trigger,
+           tab navigation, serving the copy); the offscreen document drives the
+           libraries. Arrow labels name the data crossing each boundary;
+           double-headed arrows indicate request--response pairs. The finished
+           copy reaches the viewer through Cache Storage, not through messages.}
   \label{fig:integration}
 \end{figure}

@@ -60,6 +60,15 @@ function getScheduler(lang) {
 }
 
 /**
+ * Terminate all OCR workers (they're recreated on the next recognize()).
+ */
+export async function releaseWorkers() {
+  const pools = [...schedulers.values()];
+  schedulers.clear();
+  await Promise.all(pools.map((p) => p.then((s) => s.terminate()).catch(() => {})));
+}
+
+/**
  * Recognize a canvas. Returns a flat [{text, confidence, bbox}] list in canvas
  * pixel coordinates, or null on failure.
  */
@@ -123,6 +132,9 @@ export async function renderOCRCanvas(page) {
   return { canvas, viewport };
 }
 
+// Smallest gray-level span the contrast stretch maps onto 0..255 (max gain ≈2.7×).
+const MIN_STRETCH_RANGE = 96;
+
 // Targeted preprocessing for the two hardest OCR cases:
 //   • low-contrast text → percentile contrast stretch (auto-levels)
 //   • blurry text       → unsharp mask (re-sharpen glyph edges)
@@ -141,12 +153,16 @@ function preprocessForOCR(ctx, w, h) {
     hist[g]++;
   }
 
-  // 2. Contrast stretch between the 2nd and 98th percentiles (ignore outliers).
+  // 2. Contrast stretch between the 2nd and 98th percentiles (ignore outliers),
+  //    anchored at the white point. On a mostly blank page (a receipt, a cover)
+  //    text is under 2% of the pixels, so the 2nd percentile is background too;
+  //    the range floor caps the gain so JPEG noise isn't stretched into black
+  //    speckles that bury the text.
   const lo = histPercentile(hist, n, 0.02);
   const hi = histPercentile(hist, n, 0.98);
-  const range = Math.max(1, hi - lo);
+  const range = Math.max(MIN_STRETCH_RANGE, hi - lo);
   const lut = new Uint8ClampedArray(256);
-  for (let v = 0; v < 256; v++) lut[v] = ((v - lo) * 255) / range;
+  for (let v = 0; v < 256; v++) lut[v] = 255 - ((hi - v) * 255) / range;
   for (let p = 0; p < n; p++) gray[p] = lut[gray[p]];
 
   // 3. Unsharp mask: sharp = gray + amount * (gray - blurred)

@@ -4,72 +4,74 @@
 This section walks through the pipeline stage by stage. Code excerpts are drawn
 from the extension's source and lightly trimmed for space.
 
-\subsection{Extension Structure and On-Demand Activation}
-The extension is a Manifest~V3 package. Its content security policy permits
-\code{wasm-unsafe-eval} so the bundled Tesseract WebAssembly core can run, and
-the OCR engine, language data, and PDF.js are declared as web-accessible
-resources so the viewer can load them offline---no CDN fetch occurs at runtime.
+\subsection{Extension Structure and Activation}
+The extension is a Manifest~V3 package with no content scripts. Its content
+security policy permits \code{wasm-unsafe-eval} so the bundled Tesseract
+WebAssembly core can run, and the OCR engine, language data, PDF.js and pdf-lib
+are all bundled---no CDN fetch occurs at runtime.
 
-Activation is on demand (decision~\ref{dec:ondemand}): Chrome's native viewer
-shows every PDF, and the service worker stays dormant until the user invokes the
-extension. Two entry points---the toolbar icon (\code{action.onClicked}) and a
-browser-global keyboard shortcut (\code{commands.onCommand}, default
-\code{Ctrl+Shift+F} / \code{Cmd+Shift+F})---run one shared handler
-(Listing~\ref{lst:activate}). It switches the active tab to the custom viewer with
-the PDF's URL preserved as a \code{?url=} parameter; if the tab is \emph{already}
-the viewer, it switches back to the native viewer, so the same gesture toggles
-between the two.
+Activation is on demand (decision~\ref{dec:ondemand}). Two entry points---the
+toolbar icon (\code{action.onClicked}) and a keyboard shortcut
+(\code{commands.onCommand}, \code{Ctrl+Shift+F} on every platform)---run one
+handler (Listing~\ref{lst:activate}). On a searchable copy it restores the
+original, whose URL is carried in the copy's \code{src} parameter. Otherwise it
+starts the offscreen document and sends it the job, including the copy URL and
+cache key the service worker has chosen, so that the naming of copies lives in
+one place.
 
-\begin{lstlisting}[caption={On-demand activation: the toolbar icon and the keyboard shortcut both run one handler that toggles the active tab between the native viewer and the custom OCR viewer (\code{service-worker.js}).}, label={lst:activate}]
-function toggleViewer(tab) {
-  // Already in our viewer? Switch back to Chrome's native viewer.
-  const original = originalUrlFromViewer(tab.url);
-  if (original) return chrome.tabs.update(tab.id, { url: original });
-  // A PDF? Open it in the OCR viewer, preserving the URL as ?url=.
-  if (isPdfUrl(tab.url))
-    chrome.tabs.update(tab.id, { url: viewerUrlFor(tab.url) });
+\begin{lstlisting}[caption={On-demand activation: one handler for the toolbar icon and the shortcut. It restores the original when the tab shows a copy, and otherwise starts a job (\code{service-worker.js}).}, label={lst:activate}]
+async function toggle(tab) {
+  // Showing a searchable copy? Restore the original PDF.
+  if (isCopyUrl(tab.url)) {
+    const original = originalOf(tab.url);
+    await dropSwap(tab.id);
+    await deleteCopy(tab.url);
+    if (original) chrome.tabs.update(tab.id, { url: original });
+    return;
+  }
+  if (!isFetchableUrl(tab.url)) return badgeError(tab.id, "open a PDF in this tab first");
+
+  badge(tab.id, "...", "Making this PDF searchable...");
+  await ensureOffscreen();
+  const url = tab.url.split("#")[0];
+  const copyUrl = newCopyUrl(url);   // chrome-extension://<id>/searchable/<uuid>/<name>?src=<url>
+  chrome.runtime.sendMessage({ type: "fii-process", tabId: tab.id, url,
+    lang: await getLang(), copyUrl, cache: COPY_CACHE, cacheKey: copyKey(copyUrl) });
 }
-
-chrome.action.onClicked.addListener(toggleViewer);        // toolbar icon
-chrome.commands.onCommand.addListener((cmd, tab) => {     // Ctrl+Shift+F
-  if (cmd === "toggle-search") toggleViewer(tab);
-});
+chrome.action.onClicked.addListener((tab) => toggle(tab));
+chrome.commands.onCommand.addListener((cmd, tab) => { if (cmd === "toggle-search") toggle(tab); });
 \end{lstlisting}
 
 Local \code{file://} PDFs additionally require the per-extension ``Allow access to
-file URLs'' setting; if it is off, the handler opens the extension's details page
-(where the toggle lives) instead of a viewer that would fail to load.
+file URLs'' setting; if it is off, the handler shows a red badge explaining this
+and opens the extension's details page, where the toggle lives.
 
-The viewer reads the original URL from its query string. The service worker writes
-it with \code{encodeURIComponent}, so \code{URLSearchParams.get} decodes it back to
-the exact original URL---which is then handed to PDF.js \emph{as-is}. It is
-important \emph{not} to re-encode at this point: passing the already-valid URL
-through \code{encodeURI} would escape each \code{\%} and turn a path segment like
-\code{Personal\%20Projects} into \code{Personal\%2520Projects}, breaking
-\code{file://} loads.
+\subsection{Download, Validation, and Identity}
+The offscreen document downloads the PDF again from the tab's URL with
+\code{credentials: "include"}, so that PDFs on sites the user is signed in to
+return the same file the tab shows. The trigger accepts \emph{any} web or file
+URL, because many PDFs are served from addresses without ``.pdf'' (for example
+\code{arxiv.org/pdf/2111.03017} or \code{download.php?id=7}). Validation therefore
+happens on the bytes: a PDF must contain the signature \code{\%PDF-} within its
+first kilobyte. A page that returns HTML is reported as ``not a PDF (or a
+sign-in page)''.
 
-\subsection{Lazy Rendering Pipeline}
-Rendering and OCR-ing every page up front would block on large documents.
-Instead, the viewer immediately creates a correctly-sized placeholder
-\code{<div>} for every page---estimated from page~1's dimensions so the scrollbar
-reserves the right space---and uses an \code{IntersectionObserver}
-\cite{intersectionobserver} with a 300\,px margin to render each page just before
-it scrolls into view.
-
-Each page is rendered at the device pixel ratio (capped at $2\times$) so text
-stays crisp on Retina displays: the canvas backing store is enlarged by the
-output scale while the canvas is \emph{displayed} at CSS size, letting the browser
-downsample to a sharp image. Layout remains in CSS pixels, which keeps the text
-layer's coordinate space stable regardless of display density.
+The bytes are then loaded twice, by PDF.js (for analysis and rendering) and by
+pdf-lib (for writing), while \code{crypto.subtle.digest} computes their SHA-256 in
+parallel. If either library reports encryption, the job ends with a clear
+message: pdf-lib cannot write into encrypted files. pdf-lib's
+\code{EncryptedPDFError} is transpiled ES5, so \code{instanceof} does not
+recognize it and the check matches its message instead. The PDF.js loading task
+is destroyed in a \code{finally} block, because the offscreen document lives all
+session and would otherwise keep every processed document in memory.
 
 \subsection{Text Detection}
-For each page the viewer first calls \code{getTextContent()}. It then decides
-whether OCR is needed: OCR runs when the page paints raster images \emph{or} when
-no text is extractable at all (a page may be a scan, or have text converted to
-vector outlines---both invisible to \code{getTextContent()}). Image detection
-inspects the operator list:
+For each page the processor first calls \code{getTextContent()}. OCR runs when
+the page paints raster images \emph{or} when no text is extractable at all (a page
+may be a scan, or have its text converted to vector outlines---both invisible to
+\code{getTextContent()}). Image detection inspects the operator list:
 
-\begin{lstlisting}[caption={Image-detection function: scans the PDF.js operator list for raster paint opcodes to decide whether OCR is needed on a given page (\code{viewer.js}).}, label={lst:hasimages}]
+\begin{lstlisting}[caption={Image detection: scans the PDF.js operator list for raster paint opcodes to decide whether a page needs OCR (\code{processor.js}).}, label={lst:hasimages}]
 const IMAGE_OPS = new Set([
   pdfjsLib.OPS.paintImageXObject,      pdfjsLib.OPS.paintInlineImageXObject,
   pdfjsLib.OPS.paintImageMaskXObject,  pdfjsLib.OPS.paintImageXObjectRepeat,
@@ -83,115 +85,151 @@ async function pageHasImages(page) {
 If image detection fails it \emph{fails open}---assuming images are present---on
 the principle that an unnecessary OCR pass is cheaper than silently missing text.
 
-\subsection{Native Text-Layer Injection}
-When PDF text exists, it is injected directly because it is exact and free.
-Aligning the invisible glyphs with the canvas, however, requires care: a span's
-natural rendered width will not match the PDF run's width. The implementation uses
-a three-pass \emph{measure-and-scale} technique that triggers only one layout
-reflow. Each span is created and positioned using the matrix of
-Eq.~\eqref{eq:matmul}--\eqref{eq:angle}; all spans are measured in a single pass;
-then each is scaled horizontally to exactly its target device-space width:
-\begin{equation}
-  s_x \;=\; \frac{w_{\text{target}}}{w_{\text{measured}}},
-\end{equation}
-applied as a CSS \code{scaleX} (composed with \code{rotate($\theta$)} for rotated
-text). Measuring rather than estimating is what makes selection and find land on
-the correct characters. The matrix product itself is implemented directly:
-
-\begin{lstlisting}[caption={Six-element 2D affine matrix product that composes the PDF.js viewport transform with each glyph's own transform when placing native text spans (\code{text-layer.js}).}, label={lst:matmul}]
-function matMul(m1, m2) {
-  return [
-    m1[0]*m2[0] + m1[2]*m2[1],          m1[1]*m2[0] + m1[3]*m2[1],
-    m1[0]*m2[2] + m1[2]*m2[3],          m1[1]*m2[2] + m1[3]*m2[3],
-    m1[0]*m2[4] + m1[2]*m2[5] + m1[4],  m1[1]*m2[4] + m1[3]*m2[5] + m1[5],
-  ];
-}
-\end{lstlisting}
-
 \subsection{OCR Rendering and Preprocessing}
-The on-screen canvas is sized to the window and is often too low-resolution for
-small text inside images. OCR therefore uses a \emph{separate, offscreen} canvas
-targeting roughly 3000\,px wide ($\approx$350\,DPI for a Letter page),
-discarded immediately after recognition to free memory.
+Pages that need OCR are rendered to an offscreen canvas about 3000\,px wide
+($\approx$360\,DPI for a Letter page), with PDF.js's \code{print} intent so that
+rendering is not paced by \code{requestAnimationFrame}, which never fires in a
+hidden document. The canvas is released immediately after recognition.
 
-Before recognition, the image is preprocessed in grayscale to attack the two
-hardest cases---low contrast and blur:
+Before recognition, the image is converted to grayscale and preprocessed to
+attack the two hardest cases, low contrast and blur:
 \begin{enumerate}
-  \item \textbf{Percentile contrast stretch.} A luminance histogram is computed
-        and the intensities between the 2nd and 98th percentiles are stretched to
-        the full $[0,255]$ range (ignoring outliers). Low-contrast pages are
-        pushed toward clean black-on-white; already-punchy pages are left almost
-        unchanged.
+  \item \textbf{Gain-capped contrast stretch.} With $P_{2}$ and $P_{98}$ the 2nd
+        and 98th percentiles of the luminance histogram, every gray level $v$ is
+        remapped as
+        \begin{equation}
+          v' = 255 - 255\,\frac{P_{98} - v}{R},
+          \qquad
+          R = \max\bigl(R_{\min},\; P_{98} - P_{2}\bigr),
+          \quad R_{\min} = 96 .
+          \label{eq:stretch}
+        \end{equation}
+        When the percentiles are far apart this is the classic stretch
+        ($P_2\mapsto 0$, $P_{98}\mapsto 255$). The floor $R_{\min}$ matters on
+        mostly blank pages: when text covers less than 2\% of the pixels, $P_2$
+        is itself background. On the first test pages $P_2$ was 233--238 against
+        $P_{98}=240$, so the uncapped stretch multiplied contrast by up to
+        $127\times$, turned faint JPEG noise into black speckle, and made one page
+        unreadable. Anchoring at $P_{98}$ keeps the background white, and the
+        floor limits the gain to $255/96 \approx 2.7$.
   \item \textbf{Unsharp mask.} Edges are re-sharpened as
         $\text{sharp} = g + \alpha\,(g - g_{\text{blur}})$ with $\alpha=1$, where
         $g_{\text{blur}}$ comes from a separable box blur implemented with a
-        sliding-window sum so its cost is $O(n)$ independent of radius.
+        sliding-window sum, so its cost is $O(n)$ independent of radius.
 \end{enumerate}
 Tesseract performs its own binarization afterward, so this stage only needs to
 hand it a clean, high-contrast grayscale image.
 
 \subsection{OCR Engine Orchestration}
-Recognition runs through a Tesseract.js \emph{scheduler} that distributes jobs
-across a pool of Web Workers, so multiple pages OCR concurrently without blocking
-the UI. The worker count scales with CPU cores but is capped, leaving one core for
-rendering, because each worker loads its own copy of the language model:
+Recognition runs through a Tesseract.js \emph{scheduler} that distributes pages
+across a pool of Web Workers. The worker count scales with CPU cores but is
+capped, because each worker loads its own copy of the language model:
 \begin{equation}
   N_{\text{workers}} = \max\!\big(1,\ \min(4,\ \texttt{hardwareConcurrency}-1)\big).
 \end{equation}
-Workers are configured for \emph{sparse text} page segmentation (find as much
-text as possible, in any order), which markedly outperforms the default layout
-analysis on tables, captions, and scattered small text. Three language modes are supported---\code{eng}, \code{dan}, and
-\code{eng+dan} (combined)---loaded from bundled \code{traineddata} files.
-The choice is persisted in \code{localStorage}, and results are cached per
-language so switching is non-destructive.
+The processor keeps $N_{\text{workers}}$ pages in flight at once. JavaScript is
+single-threaded, so pdf-lib edits to different pages interleave safely; only the
+rendering and recognition awaits overlap. Workers use \emph{sparse text} page
+segmentation, which finds table cells, captions, and scattered text far better
+than the default layout analysis. Three language modes are supported---\code{eng},
+\code{dan}, and \code{eng+dan}---with one worker pool per language. Sixty seconds
+after the job queue empties, all pools are terminated to free their memory; they
+are recreated on the next job.
 
 \subsection{Post-Processing for Findability}
 Because native find performs exact substring matching, fuzzy matching is
-impossible at search time. The post-processing stage instead improves the
-\emph{stored} text. It drops near-zero-confidence noise, trims non-alphanumeric
-junk from word edges, and---critically---emits an extra \emph{correction variant}
-for words that look like digit/letter confusions (e.g.\ \code{he11o}
-$\rightarrow$ \code{hello}, \code{ca5h} $\rightarrow$ \code{cash}).
-A token whose digits outnumber its letters (more than 50\% digit characters)
-is left alone and treated as a genuine number or code, so correction is only
-applied where the OCR confusion is plausible:
+impossible at search time; the post-processing stage improves the \emph{stored}
+text instead. It drops near-zero-confidence noise, trims non-letter junk from
+word edges (with Unicode letter classes, so Danish words keep their
+\textit{æ}, \textit{ø} and \textit{å}), and emits a \emph{correction variant}
+for words that look like digit/letter confusions (\code{he11o}\,$\to$\,\code{hello},
+\code{ca5h}\,$\to$\,\code{cash}). Tokens that are more than half digits are left
+alone as genuine numbers or codes:
 
-\begin{lstlisting}[caption={Emitting a search-only correction variant for OCR tokens with likely digit/letter confusions (e.g.\ \code{he11o}\,$\to$\,\code{hello}); the raw word is retained for copy/paste (\code{ocr-postprocess.js}).}, label={lst:variant}]
+\begin{lstlisting}[caption={Emitting a correction variant for OCR tokens with likely digit/letter confusions (\code{ocr-postprocess.js}).}, label={lst:variant}]
 const DIGIT_TO_LETTER = { "0":"o","1":"l","5":"s","6":"b","8":"b","9":"g","2":"z" };
-// keep the raw word (selectable), then add a corrected, search-only variant
-out.push({ text, bbox: w.bbox });
-const variant = correctionVariant(text);          // null unless mixed letters+digits
+out.push({ text, bbox: w.bbox });                 // the word as recognized
+const variant = correctionVariant(text);          // null unless mostly letters + some digits
 if (variant && variant !== text)
   out.push({ text: variant, bbox: w.bbox, variant: true });
 \end{lstlisting}
 
-Both the raw word and its corrected variant are injected at the same position, so
-a search succeeds whether the user types the true spelling or the OCR'd one.
-Variants are marked \code{variant:\,true} and excluded from mouse selection and
-copy via CSS (\code{user-select:\,none}), so copied text is never duplicated.
+The earlier DOM viewer injected both forms and hid the variant from selection.
+Inside a real PDF there is no such distinction: two words at one spot would
+double Chrome's match count and duplicate copied text. The processor therefore
+embeds a single form, preferring the corrected variant, since it is what the
+image most likely says.
 
-\subsection{Normalization, Caching, and De-duplication}
-Recovered words are normalized to the unit square (Eq.~\eqref{eq:normalize}) and
-stored in IndexedDB, keyed by \code{\$\{docId\}::\$\{pageNum\}} where the document
-ID also encodes the OCR language. The store carries a \emph{format version};
-bumping it (e.g.\ when the preprocessing pipeline changed) transparently
-invalidates stale results. Empty results are cached too, so text-only pages are
-not re-examined on every load.
+\subsection{Writing the Invisible Layer}
+Each recognized word is mapped into PDF user space as described in
+Section~\ref{sec:coords} and de-duplicated against the page's existing text.
+The survivors are appended to the page's content stream as one invisible text
+object each (Listing~\ref{lst:embed}). The whole block is wrapped in
+\code{q}/\code{Q} so its text state cannot leak into anything drawn later.
+Helvetica's WinAnsi encoding covers English and Danish; a word containing a
+character it cannot encode is skipped rather than failing the page.
 
-A page can carry \emph{both} native text and image text. After OCR, words are
-de-duplicated against the native boxes: an OCR word is dropped only if its
-\emph{centre point} falls inside a native box that already contains the same
-token. This centre-point test means a large OCR word whose centre lies outside a
-small native box is kept, erring on the side of retaining searchable text.
+\begin{lstlisting}[caption={Writing one invisible, width-matched text object per word with pdf-lib (\code{embed.js}).}, label={lst:embed}]
+for (const wd of words) {
+  const encoded = font.encodeText(wd.text);
+  const natural = font.widthOfTextAtSize(wd.text, wd.h);
+  const squeeze = Math.max(1, Math.min(1000, (wd.w / natural) * 100));  // Tz, percent
+  const cos = Math.cos(wd.angle), sin = Math.sin(wd.angle);
+  ops.push(
+    PDFLib.beginText(),
+    PDFLib.setTextRenderingMode(PDFLib.TextRenderingMode.Invisible),     // 3 Tr
+    PDFLib.setFontAndSize(fontKey, wd.h),
+    PDFLib.setCharacterSqueeze(squeeze),
+    PDFLib.setTextMatrix(cos, sin, -sin, cos, wd.x, wd.y),
+    PDFLib.showText(encoded),
+    PDFLib.endText(),
+  );
+}
+page.pushOperators(PDFLib.pushGraphicsState(), ...ops, PDFLib.popGraphicsState());
+\end{lstlisting}
 
-\subsection{Search and the Custom Find Bar}
-A subtle rendering issue motivated replacing the native find UI: Chrome's built-in
-find makes the invisible text layer briefly visible in a mismatched font, which
-looks like oversized, doubled text over the page. \proj{} therefore intercepts
-$\mathrm{Ctrl}/\mathrm{Cmd}{+}\mathrm{F}$ and presents its own find bar. For each
-query it walks the injected spans, builds a DOM \code{Range} around every match,
-and reads \code{getClientRects()} to draw translucent highlight overlays
-positioned relative to each page wrapper; the active match is styled distinctly
-and scrolled into view, with $\uparrow/\downarrow$, Enter, and F3 navigation.
-Because pages become searchable progressively, an active search is re-run
-(debounced) as each new page finishes indexing, with the current match preserved.
+The document is then saved with its metadata untouched, and the bytes are
+stored in Cache Storage as an \code{application/pdf} response under the key the
+service worker supplied.
+
+\subsection{Caching}
+Recognized words are normalized to the unit square (Eq.~\eqref{eq:normalize}) and
+stored in IndexedDB under \code{<sha256>::<lang>::<page>}. Because the key is the
+file's content hash, the same PDF reached through two different URLs is
+recognized once, and a different file at a familiar URL is never matched to
+stale words. Empty results are cached too, so text-only pages are not re-examined.
+Each record carries a \emph{format version}, bumped whenever the OCR pipeline
+changes, and a last-used timestamp. A cache hit refreshes the timestamp, and
+after every job the oldest records are deleted until at most 2{,}000 pages
+remain.
+
+\subsection{Serving and Cleaning Up the Copy}
+When the job is done, the service worker checks that the tab still shows the
+same PDF (the user may have moved on), records which copy the tab shows, and
+navigates it to the copy URL. Chrome requests that URL from the extension, and
+the service worker's \code{fetch} handler answers it (Listing~\ref{lst:serve}).
+Chrome sees an \code{application/pdf} response and opens its own viewer; because
+the path ends in the original file name, the tab title is unchanged. The success
+badge is set only after the tab finishes loading, because Chrome clears a tab's
+badge whenever it navigates.
+
+\begin{lstlisting}[caption={Serving searchable copies at the extension's own URLs. Cache Storage only accepts http(s) keys, so copies are stored under a placeholder origin with the same path (\code{service-worker.js}).}, label={lst:serve}]
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || !url.pathname.startsWith("/searchable/")) return;
+  event.respondWith(serveCopy(url));
+});
+async function serveCopy(url) {
+  const hit = await (await caches.open(COPY_CACHE)).match(COPY_KEY_ORIGIN + url.pathname);
+  if (hit) return hit;
+  // The copy is gone (e.g. the browser restarted): fall back to the original PDF.
+  const src = url.searchParams.get("src");
+  if (src && isFetchableUrl(src)) return Response.redirect(src, 302);
+  return new Response("This searchable copy is no longer available.", { status: 404 });
+}
+\end{lstlisting}
+
+Copies are deleted when the user restores the original, when their tab
+navigates elsewhere or closes, and when the browser starts. A tab that returns to
+a deleted copy---through session restore or the browser's history---simply
+redirects to the original PDF.

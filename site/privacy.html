@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Find in Images — Privacy Policy</title>
+  <meta name="description" content="Privacy policy for the Find in Images Chrome extension. All processing happens on your device; nothing is collected or sent anywhere." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #f6f8fa;
+      color: #1f2937;
+      padding: 48px 20px;
+      line-height: 1.65;
+    }
+
+    .wrap {
+      max-width: 760px; margin: 0 auto;
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+      padding: 36px clamp(20px, 5vw, 44px);
+    }
+
+    .kicker {
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: #6b7280; font-size: 12px; font-weight: 700;
+    }
+    h1 { font-size: clamp(26px, 5vw, 34px); color: #0f172a; margin: 8px 0 4px; letter-spacing: -0.4px; }
+    .updated { color: #6b7280; font-size: 14px; margin-bottom: 26px; }
+    h2 { font-size: 18px; color: #0f172a; margin: 28px 0 8px; }
+    p, li { font-size: 15px; color: #374151; }
+    p + p { margin-top: 10px; }
+    ul { padding-left: 22px; margin-top: 6px; }
+    li + li { margin-top: 6px; }
+    .summary {
+      background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+      padding: 14px 18px; color: #1e3a8a; font-size: 15px;
+    }
+    code { font-size: 13.5px; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+    a { color: #1F6FB2; font-weight: 600; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    footer { text-align: center; margin-top: 28px; font-size: 13px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="kicker">Find in Images</div>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: 1 October 2026</p>
+
+    <p class="summary">Find in Images runs entirely on your device. It does not collect, sell, share or send any of your data, and it contains no analytics or tracking.</p>
+
+    <h2>What the extension does with your data</h2>
+    <p>The extension only acts when you ask it to: by clicking its toolbar icon or pressing its keyboard shortcut on a tab that shows a PDF. When you do:</p>
+    <ul>
+      <li><strong>It downloads the PDF that is open in that tab</strong>, from the same address and with the same browser cookies Chrome used to show it. This is how it can read PDFs on sites you are signed in to. The request goes only to the site the PDF came from.</li>
+      <li><strong>It reads the text in the PDF's images on your computer</strong> (optical character recognition with Tesseract.js). The OCR engine and its language files are bundled with the extension. Nothing is downloaded from or uploaded to any other server.</li>
+      <li><strong>It makes a searchable copy</strong> of the PDF on your computer and shows it in Chrome's built-in PDF viewer.</li>
+    </ul>
+
+    <h2>What is stored, and where</h2>
+    <p>Everything stays in the extension's own storage in your Chrome profile:</p>
+    <ul>
+      <li><strong>Recognized words and their positions</strong> (an OCR cache), so the same PDF doesn't have to be processed twice. Entries are identified by a fingerprint (SHA-256 hash) of the file, not by its address. The oldest entries are deleted automatically once the cache reaches about 2,000 pages.</li>
+      <li><strong>The searchable copy</strong> of a PDF you're viewing. It is deleted when you switch back to the original, navigate away, close the tab or restart Chrome.</li>
+      <li><strong>Your OCR language choice</strong> (for example English or Danish).</li>
+    </ul>
+    <p>Removing the extension deletes all of this. You can also clear it at any time by removing and reinstalling the extension.</p>
+
+    <h2>What is never done</h2>
+    <ul>
+      <li>No personal information, browsing history, page content, PDFs or OCR results are sent to the developer or to any third party.</li>
+      <li>No analytics, advertising, telemetry or remote code.</li>
+      <li>The extension does not read or change web pages. It only fetches the PDF in the tab you trigger it on.</li>
+    </ul>
+
+    <h2>Permissions</h2>
+    <ul>
+      <li><code>Read and change data on all websites</code> (host access): needed to download the PDF open in your tab, wherever it is hosted, so it can be processed locally. It is used only when you trigger the extension on that tab.</li>
+      <li><code>offscreen</code>: runs the PDF rendering and OCR in a hidden extension page so your tab stays responsive.</li>
+      <li><code>storage</code>: remembers your OCR language and which tabs are showing a searchable copy.</li>
+      <li><code>contextMenus</code>: the "OCR language" menu on the toolbar icon.</li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy can be raised as an issue on the project's <a href="https://github.com/suhani-pandey/FindInImages/issues">GitHub page</a>.</p>
+
+    <footer><a href="./">&larr; Find in Images</a></footer>
+  </div>
+</body>
+</html>

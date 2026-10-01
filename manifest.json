@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Find in Images",
   "version": "2.0.0",
-  "description": "Press Ctrl+Shift+F on a scanned PDF: OCR embeds an invisible text layer and reopens it in Chrome's own viewer, so the normal Ctrl+F finds text inside images.",
+  "description": "Search scanned PDFs with Chrome's own Ctrl+F. On-device OCR adds an invisible text layer — nothing leaves your computer.",
+  "minimum_chrome_version": "116",
 
   "icons": {
     "16":  "icons/icon16.png",
@@ -25,7 +26,7 @@
   },
 
   "action": {
-    "default_title": "Search this PDF with OCR (Ctrl+Shift+F / ⌘⇧F)",
+    "default_title": "Search this PDF with OCR (Ctrl+Shift+F)",
     "default_icon": {
       "16":  "icons/icon16.png",
       "48":  "icons/icon48.png",
@@ -37,7 +38,7 @@
     "toggle-search": {
       "suggested_key": {
         "default": "Ctrl+Shift+F",
-        "mac": "Command+Shift+F"
+        "mac": "MacCtrl+Shift+F"
       },
       "description": "Make this PDF searchable with OCR (or restore the original)"
     }

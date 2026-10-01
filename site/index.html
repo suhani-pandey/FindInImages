@@ -83,13 +83,13 @@
       </svg>
       <div class="kicker">Chrome Extension &middot; Manifest V3</div>
       <h1>Find in Images</h1>
-      <p class="sub">Making scanned and image-based PDFs searchable with Ctrl+F, through on-device OCR and an invisible DOM text overlay.</p>
+      <p class="sub">Making scanned and image-based PDFs searchable with Chrome's own Ctrl+F, through on-device OCR and an invisible text layer embedded in the PDF.</p>
       <div class="stack">
         <span class="tag t-blue">JavaScript ES6+</span>
         <span class="tag t-purple">PDF.js</span>
         <span class="tag t-teal">Tesseract.js</span>
-        <span class="tag t-amber">IndexedDB</span>
-        <span class="tag t-green">Canvas / DOM</span>
+        <span class="tag t-amber">pdf-lib</span>
+        <span class="tag t-green">Manifest V3</span>
       </div>
     </div>
 
@@ -98,7 +98,7 @@
       <div class="card">
         <div class="icon">&#128220;</div>
         <h2>Project Report</h2>
-        <p>The formal write-up: abstract, requirements, background, system design, development process, implementation, results, limitations, and conclusion.</p>
+        <p>The formal write-up: requirements, background, system design, the phase-by-phase development (including two architectural reversals), implementation, evaluation in real Chrome, limitations, and conclusion.</p>
         <div class="links">
           <a class="btn btn-primary" href="report/">Read online &rarr;</a>
           <a class="btn btn-ghost" href="report/main.pdf" download="Find-in-Images-Report.pdf">&#8595; PDF</a>
@@ -108,7 +108,7 @@
       <div class="card">
         <div class="icon">&#128296;</div>
         <h2>Technical Documentation</h2>
-        <p>Architecture and design rationale with diagrams: the OCR pipeline, component map, request sequence, coordinate mapping, per-page processing, and performance strategy.</p>
+        <p>Architecture and design rationale with diagrams: the OCR pipeline, component map, request sequence, coordinate mapping, per-page processing, resource lifecycle, build history, and testing.</p>
         <div class="links">
           <a class="btn btn-primary" href="docs/DOCUMENTATION.pdf">Open &rarr;</a>
           <a class="btn btn-ghost" href="docs/DOCUMENTATION.pdf" download="Find-in-Images-Documentation.pdf">&#8595; PDF</a>
@@ -118,7 +118,7 @@
     </div>
 
     <footer>
-      <p>Built by Suhani Pandey &middot; <a href="https://github.com/suhani-pandey/FindInImages">View source on GitHub</a></p>
+      <p>Built by Suhani Pandey &middot; <a href="https://github.com/suhani-pandey/FindInImages">View source on GitHub</a> &middot; <a href="sample-scan.pdf">Sample scanned PDF</a> &middot; <a href="privacy.html">Privacy policy</a></p>
     </footer>
 
   </div>

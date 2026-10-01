@@ -1,66 +1,102 @@
 \section{Results and Evaluation}
 \label{sec:results}
 
-This evaluation is qualitative and behavioral: it characterizes what the system
-achieves and how its architecture behaves, rather than reporting formal accuracy
-or timing benchmarks, which are identified as future work in
-Section~\ref{sec:limitations}.
+The system is evaluated by an automated end-to-end test of the \emph{packaged}
+extension in real Chrome, complemented by measurements of OCR accuracy, timing,
+and visual fidelity on a small set of test documents. The corpus is small and
+synthetic, so the accuracy figures characterize behaviour rather than serve as a
+benchmark (Section~\ref{sec:limitations}).
+
+\subsection{Method: End-to-End Testing in Chrome}
+The test (\code{npm run test:e2e}) builds the release zip, unpacks it, and
+launches Google Chrome with a throwaway profile, connected through the DevTools
+protocol over a pipe~\cite{cdp}. It loads the extension with
+\code{Extensions.loadUnpacked}, attaches to the extension's service worker,
+and invokes the same handler the toolbar icon calls. A local HTTP server plays
+the web: it serves image-only PDFs, a PDF at a URL without ``.pdf'', a PDF behind
+a sign-in cookie, a URL whose file changes between requests, a non-PDF page, and
+two encrypted PDFs. The fixtures are US Letter pages rendered at 300\,DPI and
+saved as image-only PDFs, like a scanner's output: a dense page with a paragraph,
+small print and a bordered table; a sparse receipt-like page; and a delivery note
+with a table. Each check observes what Chrome actually did---the tab's URL and
+title, the toolbar badge---and reads the copy back out of Cache Storage to
+extract its text with an independent PDF.js instance.
 
 \subsection{Functional Outcomes}
-The system meets its central goal: scanned and image-based PDFs that return
-nothing to in-page search become fully searchable in the browser. Specifically:
-\begin{itemize}
-  \item \textbf{Scanned PDFs become searchable.} Pages with no text layer are
-        OCR'd and their text injected, so queries match content that was
-        previously invisible to search.
-  \item \textbf{Mixed pages are handled.} Pages combining native text with text
-        baked into images expose both, with duplicates removed so a word is never
-        double-counted.
-  \item \textbf{Rotated text aligns.} Because rotation is recovered from the
-        transform matrix (Eq.~\eqref{eq:angle}) rather than special-cased,
-        highlights and selection track rotated pages and rotated runs.
-  \item \textbf{Selection and copy work.} Injected text is real DOM text, so
-        users can not only find but also select and copy recovered content;
-        search-only correction variants are excluded from copy to avoid
-        duplication.
-  \item \textbf{Fully offline.} OCR engine, language models, and PDF.js are
-        bundled, so no document data leaves the machine and the extension works
-        without a network connection.
-\end{itemize}
-
-\subsection{Architectural Behavior}
-The performance-oriented design choices produce the following observable
-behavior:
+All 24 checks pass on the final build. Table~\ref{tab:e2e} groups them by
+scenario.
 
 \begin{table}[ht]
   \centering
-  \caption{Design mechanisms and the behavior they produce.}
-  \label{tab:results}
+  \caption{End-to-end scenarios exercised against the packaged extension in Chrome.
+           All checks pass on the final build.}
+  \label{tab:e2e}
   \renewcommand{\arraystretch}{1.3}
-  \begin{tabularx}{\textwidth}{@{}lX@{}}
+  {\small
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.1cm} X@{}}
     \toprule
-    \textbf{Mechanism} & \textbf{Observed effect} \\
+    \textbf{Scenario} & \textbf{Verified behaviour} \\
     \midrule
-    Lazy, viewport-driven rendering & Large documents open immediately;
-      only near-viewport pages do work up front. \\
-    Idle-time background indexing & Off-screen pages still become searchable,
-      scheduled during idle time so scrolling is never blocked. \\
-    Web Worker OCR pool & Recognition runs off the main thread on several pages
-      at once; the interface stays responsive during OCR. \\
-    High-resolution OCR canvas + preprocessing & Small text inside images is
-      legible to the recognizer independent of on-screen zoom. \\
-    IndexedDB caching (normalized coords) & A document is OCR'd once; re-opening
-      or re-zooming it is instant and correct at any scale. \\
-    Correction variants & Common digit/letter misreads remain findable by their
-      true spelling. \\
+    Shortcut & Chrome actually assigns the shortcut (\code{Ctrl+Shift+F}; Control+Shift+F on Mac) \\
+    Scanned PDF & Tab switches to the copy in Chrome's viewer; the copy's text layer contains the page's words; page count and tab title unchanged; success badge shown \\
+    Reload, restore & Reloading the copy shows the copy; invoking again restores the original URL and deletes the copy \\
+    URL without ``.pdf'' & Processed; tab title (``Quarterly Report'') unchanged; reuses the OCR cache from the same file at another URL \\
+    Expired copy & With the copy deleted (as after a restart), reloading lands on the original PDF \\
+    Signed-in PDF & A cookie-protected PDF is downloaded and processed with the signed-in document's words; closing the tab deletes its copy \\
+    Changed file, same URL & The new file is processed and contains only its own words \\
+    Encrypted PDFs & Both an open-password and a permissions-only PDF report a clear error \\
+    Non-PDF page & Reports ``not a PDF'' instead of failing silently \\
+    Local file & Processed and restored to its \code{file://} URL when file access is allowed \\
+    Idle worker release & After 65\,s idle, the next document is still recognized correctly \\
     \bottomrule
-  \end{tabularx}
+  \end{tabularx}}
 \end{table}
+
+The suite's most important result came before it passed. Its first run showed
+that the shipped design never completed the tab switch---OCR finished and the
+copy existed, but Chrome would not navigate the tab to a \code{blob:} URL. No
+earlier test could have noticed, because none involved Chrome's own tab
+navigation. The redesign of decision~\ref{dec:serve} followed directly.
+
+\subsection{OCR Accuracy}
+On the dense page, the copy's text layer contains all 74 words, including the
+small print and every table cell; one character was misread (``ZX-4471'' as
+``7X-4471''). The sparse page and the delivery note were recognized word for
+word, including their tables. The gain cap of Eq.~\eqref{eq:stretch} was decisive
+on sparse pages. On the first, oversized test pages, the uncapped stretch turned
+one page into unrelated fragments and broke words in another's headline
+(``Qu erly S ary'' for ``Quarterly Summary''); with the cap, both read correctly.
+
+Two observations temper these numbers. The fixtures are clean renders, kinder
+than real scans with skew, noise and uneven lighting. And the 3000\,px OCR
+resolution is tuned for ordinary type sizes: on test pages with unusually large
+text, Tesseract skipped bordered table cells that it read at half the
+resolution.
+
+\subsection{Speed and Size}
+Measured by the test harness on the development Mac (at 0.5\,s polling
+granularity), a one-page scan goes from the user's gesture to the searchable copy
+on screen in about 2--2.5\,s, including starting the OCR workers. The same file
+again---even from another URL---takes about 0.5\,s, as OCR is skipped, and a
+new document after the workers have been released takes about 1\,s. Multi-page
+documents scale with the page count divided by the number of workers.
+
+The release package is 8.5\,MB. Shipping only the two Tesseract builds that can
+actually load (of the six previously bundled, each in three file formats) cut it
+from 22.5\,MB.
+
+\subsection{Visual Fidelity}
+Invisible text paints nothing, so the copy should look exactly like the
+original. When the sandwich design was introduced, the original and the copy
+were rendered and compared pixel by pixel: 0 of 2{,}298{,}825 pixels differed.
+The end-to-end suite additionally checks that the page count and the tab title
+are unchanged. Everything the user sees---toolbar, find bar, highlights,
+context menu---is Chrome's own.
 
 \subsection{Component Complexity}
 Table~\ref{tab:scope} summarizes the relative implementation complexity of each
-component. The coordinate-mapping and DOM-overlay subsystems dominate: they are
-where most of the subtle, correctness-critical logic lives.
+component after the redesign. Complexity moved from the DOM overlay, which no
+longer exists, to the integration with Chrome.
 
 \begin{table}[ht]
   \centering
@@ -71,20 +107,22 @@ where most of the subtle, correctness-critical logic lives.
     \toprule
     \textbf{Component} & \textbf{Complexity} \\
     \midrule
-    PDF rendering (PDF.js)            & Medium \\
-    OCR pipeline (Tesseract.js)       & Medium \\
-    Chrome extension integration      & Medium \\
-    Coordinate mapping                & High \\
-    DOM text-overlay system           & High \\
+    PDF analysis and rendering (PDF.js)            & Medium \\
+    OCR pipeline and preprocessing (Tesseract.js)  & Medium \\
+    Coordinate mapping into PDF space              & High \\
+    Invisible-text embedding (pdf-lib)             & Medium \\
+    Chrome integration (offscreen, tab switch, serving copies) & High \\
+    Caching and resource lifecycle                 & Medium \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \subsection{Discussion}
-The results validate the project's central thesis: by converting documents into
-real, well-positioned DOM text, the system inherits the browser's mature search
-behavior almost for free, and the engineering effort concentrates where the real
-difficulty lies---geometric alignment and keeping a CPU-heavy workload off the
-critical path. The accuracy layer (high-resolution rendering, preprocessing, and
-correction variants) measurably widens what is findable in practice, though it
-cannot fully overcome poor source scans; this is examined next.
+The results support the project's central thesis in its strongest form: by
+turning the document into real text, the system inherits not only the browser's
+search but its entire PDF experience, and adds no interface of its own. The
+engineering effort concentrated where the real difficulty lay---placing words
+precisely in PDF space, keeping a CPU-heavy workload in the background, and
+fitting into what the browser allows an extension to do. The last of these is
+also the lesson of the evaluation: only testing the packaged extension in the
+real browser revealed whether the product worked at all.

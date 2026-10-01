@@ -31,10 +31,10 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const CONFIG = {
   title: "Find in Images",
   subtitle:
-    "Making scanned PDFs and image-based documents searchable with the browser’s native Ctrl+F, through on-device OCR and an invisible DOM text overlay.",
+    "Making scanned PDFs searchable with Chrome’s own Ctrl+F, through on-device OCR and an invisible text layer written into a copy of the PDF.",
   tagline: "Technical Documentation & Design Rationale",
   footer: "Find in Images — Technical Documentation",
-  version: "Version 1.0",
+  version: "Version 2.0",
 };
 
 /* ----------------------------- Markdown -> HTML ----------------------------- */
@@ -206,8 +206,8 @@ function buildHtml() {
   <div class="tagline">${CONFIG.tagline}</div>
   <div class="stack">
     <span class="tag t-blue">JavaScript ES6+</span><span class="tag t-purple">PDF.js</span>
-    <span class="tag t-teal">Tesseract.js</span><span class="tag t-amber">IndexedDB</span>
-    <span class="tag t-green">Canvas / DOM</span>
+    <span class="tag t-teal">Tesseract.js</span><span class="tag t-amber">pdf-lib</span>
+    <span class="tag t-green">Manifest V3</span>
   </div>
   <div class="meta">${CONFIG.version} &middot; Architecture, implementation &amp; phase-by-phase build narrative</div>
 </div></section>`;

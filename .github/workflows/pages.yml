@@ -2,6 +2,8 @@ name: Deploy documentation to GitHub Pages
 
 # Publishes a small static site to GitHub Pages:
 #   /            → landing page (site/index.html)
+#   /privacy.html → privacy policy (linked from the Chrome Web Store listing)
+#   /sample-scan.pdf → an image-only PDF to try the extension on
 #   /report/     → the formal report viewer (report/index.html + main.pdf)
 #   /docs/       → the technical documentation PDF
 #
@@ -46,6 +48,8 @@ jobs:
           set -euo pipefail
           mkdir -p _site/report _site/docs
           cp site/index.html        _site/index.html
+          cp site/privacy.html      _site/privacy.html
+          cp site/sample-scan.pdf   _site/sample-scan.pdf
           cp report/index.html      _site/report/index.html
           cp report/main.pdf        _site/report/main.pdf
           cp docs/DOCUMENTATION.pdf _site/docs/DOCUMENTATION.pdf

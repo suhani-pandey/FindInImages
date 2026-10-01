@@ -13,7 +13,7 @@
  */
 
 import * as pdfjsLib from "../lib/pdfjs/pdf.min.mjs";
-import { getCachedPage, setCachedPage } from "./cache.js";
+import { getCachedPage, setCachedPage, hashBytes } from "./cache.js";
 import { postProcessWords } from "./ocr-postprocess.js";
 import { renderOCRCanvas, recognize, OCR_WORKERS } from "./ocr.js";
 import { embedWords } from "./embed.js";
@@ -38,51 +38,109 @@ const IMAGE_OPS = new Set([
  *          bytes is null when no page needed OCR text (already searchable).
  */
 export async function processPdf(url, lang, onProgress = () => {}) {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Couldn't download the PDF (HTTP ${resp.status})`);
-  const original = new Uint8Array(await resp.arrayBuffer());
+  const original = await downloadPdf(url);
 
   const PDFLib = globalThis.PDFLib;
   if (!PDFLib) throw new Error("pdf-lib not loaded");
 
   // pdf.js transfers its input buffer to the worker, so give it a copy and
-  // keep `original` intact for pdf-lib.
-  const [pdfDoc, libDoc] = await Promise.all([
-    pdfjsLib.getDocument({ data: original.slice() }).promise,
-    PDFLib.PDFDocument.load(original, { updateMetadata: false }),
-  ]);
-
-  const font = await libDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-  const total = pdfDoc.numPages;
-  let wordsAdded = 0;
-  let done = 0;
-
-  // Process pages with a small concurrency pool so all OCR workers stay busy.
-  // JS is single-threaded, so interleaved pdf-lib mutations on different pages
-  // are safe; only the OCR/render awaits actually overlap.
-  let next = 1;
-  const worker = async () => {
-    while (next <= total) {
-      const pageNum = next++;
-      try {
-        wordsAdded += await processPage(pdfDoc, libDoc, font, pageNum, url, lang, PDFLib);
-      } catch (err) {
-        console.error(`[FindInImages] page ${pageNum} failed:`, err);
+  // keep `original` intact for pdf-lib. The loading task owns the pdf.js
+  // worker; it's destroyed in `finally` because the offscreen document lives
+  // all session and would otherwise keep every processed PDF in memory.
+  const loadingTask = pdfjsLib.getDocument({ data: original.slice() });
+  try {
+    let pdfDoc, libDoc, hash;
+    try {
+      [pdfDoc, libDoc, hash] = await Promise.all([
+        loadingTask.promise,
+        PDFLib.PDFDocument.load(original, { updateMetadata: false }),
+        hashBytes(original),
+      ]);
+    } catch (err) {
+      if (isEncryptionError(err)) {
+        throw new Error("This PDF is password-protected or encrypted, so it can't be made searchable");
       }
-      done++;
-      onProgress(done, total);
+      throw err;
     }
-  };
-  await Promise.all(Array.from({ length: Math.min(OCR_WORKERS, total) }, worker));
 
-  if (wordsAdded === 0) return { bytes: null, pages: total, words: 0 };
+    const docId = `${hash}::${lang}`;
+    const font = await libDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+    const total = pdfDoc.numPages;
+    let wordsAdded = 0;
+    let done = 0;
 
-  const bytes = await libDoc.save();
-  return { bytes, pages: total, words: wordsAdded };
+    // Process pages with a small concurrency pool so all OCR workers stay busy.
+    // JS is single-threaded, so interleaved pdf-lib mutations on different pages
+    // are safe; only the OCR/render awaits actually overlap.
+    let next = 1;
+    const worker = async () => {
+      while (next <= total) {
+        const pageNum = next++;
+        try {
+          wordsAdded += await processPage(pdfDoc, libDoc, font, pageNum, docId, lang, PDFLib);
+        } catch (err) {
+          console.error(`[FindInImages] page ${pageNum} failed:`, err);
+        }
+        done++;
+        onProgress(done, total);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(OCR_WORKERS, total) }, worker));
+
+    if (wordsAdded === 0) return { bytes: null, pages: total, words: 0 };
+
+    const bytes = await libDoc.save();
+    return { bytes, pages: total, words: wordsAdded };
+  } finally {
+    loadingTask.destroy();
+  }
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+async function downloadPdf(url) {
+  let resp;
+  try {
+    // Send the user's cookies so PDFs behind a sign-in (course portals,
+    // intranets) download the same file the tab is showing.
+    resp = await fetch(url, { credentials: "include" });
+  } catch {
+    throw new Error("Couldn't download the PDF (network error)");
+  }
+  if (!resp.ok) throw new Error(`Couldn't download the PDF (HTTP ${resp.status})`);
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+
+  // The trigger accepts any URL (plenty of PDFs are served without ".pdf" in
+  // the link), so this is where non-PDF pages get turned away.
+  if (!looksLikePdf(bytes)) {
+    const isHtml = /html/i.test(resp.headers.get("content-type") || "");
+    throw new Error(
+      isHtml
+        ? "This page isn't a PDF (or the PDF's link now returns a web page, such as a sign-in page)"
+        : "This file isn't a PDF"
+    );
+  }
+  return bytes;
+}
+
+// PDF files start with "%PDF-"; readers accept up to 1 KB of junk before it.
+function looksLikePdf(bytes) {
+  const head = bytes.subarray(0, 1024);
+  for (let i = 0; i + 4 < head.length; i++) {
+    if (head[i] === 0x25 && head[i + 1] === 0x50 && head[i + 2] === 0x44 &&
+        head[i + 3] === 0x46 && head[i + 4] === 0x2d) return true; // "%PDF-"
+  }
+  return false;
+}
+
+// pdf.js throws PasswordException when a password is needed. pdf-lib refuses
+// any encrypted file, but its error class is transpiled ES5, so `instanceof`
+// doesn't work on it — match its message instead.
+function isEncryptionError(err) {
+  return !!err && (err.name === "PasswordException" || /\bis encrypted\b/i.test(err.message || ""));
 }
 
 // ── Per-page pipeline ─────────────────────────────────────────────────────────
-async function processPage(pdfDoc, libDoc, font, pageNum, url, lang, PDFLib) {
+async function processPage(pdfDoc, libDoc, font, pageNum, docId, lang, PDFLib) {
   const page = await pdfDoc.getPage(pageNum);
 
   let textContent;
@@ -99,8 +157,7 @@ async function processPage(pdfDoc, libDoc, font, pageNum, url, lang, PDFLib) {
   if (!hasImages && nativeBoxes.length > 0) return 0;
 
   // Cached OCR results are normalized (0..1 of the rendered page) so they're
-  // scale-independent; the cache is shared with previous versions' entries.
-  const docId = `${url}::${lang}`;
+  // scale-independent. docId = content hash + language.
   let normWords = await getCachedPage(docId, pageNum);
 
   if (!normWords) {

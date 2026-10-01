@@ -5,47 +5,57 @@
 \begin{description}[leftmargin=1.4em, style=nextline]
   \item[OCR is not perfect.] Recognition errors propagate into search. Because
         native find is exact, a misread character can make a word unfindable by
-        its true spelling. Correction variants mitigate the most common
-        digit/letter confusions but do not cover the general case.
-  \item[Cost scales with the document.] Recognition is CPU-bound and runs on the
-        client. Very large or very dense documents take correspondingly longer to
-        fully index, even though lazy rendering keeps the document immediately
-        readable and caching makes subsequent loads instant.
-  \item[Complex layouts can misalign.] Multi-column text, unusual fonts, and
-        heavy graphical backgrounds can produce slight overlay drift or
-        degraded recognition.
+        its true spelling. Correction variants fix the most common digit/letter
+        confusions but not the general case.
+  \item[The whole document is processed before the switch.] The copy appears
+        only when every page is done, so large scans take correspondingly longer
+        (the badge shows progress meanwhile). Caching makes later visits fast.
+  \item[Encrypted PDFs cannot be processed.] pdf-lib cannot write into encrypted
+        files, so password-protected and permission-restricted PDFs are reported
+        and left as they are.
+  \item[Latin character set.] The invisible text uses the standard Helvetica font
+        with WinAnsi encoding, which covers English and Danish but not, for
+        example, Greek, Cyrillic, or CJK scripts.
+  \item[The PDF must be downloadable again.] The extension re-fetches the tab's
+        URL. PDFs produced by a form submission or served from one-time links
+        cannot be fetched a second time, and PDFs shown inside another site's
+        viewer (rather than in Chrome's) are not PDF tabs at all.
+  \item[The address bar changes.] While the copy is shown, the address bar reads
+        \code{chrome-extension://\dots/searchable/\dots}. The tab title, the
+        content, and every control are unchanged, but this is the one visible
+        sign of the switch.
+  \item[Broad host access.] To download a PDF from whatever site it is on, the
+        extension requests access to all sites. It uses that access only when
+        the user invokes it, but the install prompt and the store review treat
+        it as broad.
   \item[Device-dependent performance.] Throughput depends on the number of CPU
-        cores and the device's overall capability, since the worker pool scales
-        with available concurrency.
-  \item[Scope is currently PDF-centric.] Image text on ordinary web pages is not
-        yet handled; addressing it would require a content script, which the
-        current build does not ship.
-  \item[Discoverability of activation.] Because the extension deliberately leaves
-        Chrome's native PDF viewer in place and activates on demand
-        (decision~\ref{dec:ondemand}), it has no surface on which to advertise
-        itself while a PDF is open in the native viewer. A first-time user must
-        learn the keyboard shortcut or the toolbar icon from the store listing or
-        the icon's tooltip. This is the price of not commandeering every PDF.
+        cores, since the worker pool scales with available concurrency.
+  \item[Discoverability.] Because the extension deliberately leaves Chrome's PDF
+        viewer alone and activates on demand (decision~\ref{dec:ondemand}), it has
+        no surface on which to advertise itself. A first-time user must learn the
+        shortcut or the toolbar icon from the store listing or the icon's tooltip.
+  \item[Limited evaluation.] The accuracy results come from a few clean,
+        synthetic scans, and the end-to-end tests run on one machine with one
+        Chrome version.
 \end{description}
 
 \subsection{Future Work}
 \begin{itemize}
-  \item \textbf{Higher OCR accuracy.} Richer post-processing---dictionary-based
-        correction, confidence-weighted variants, and language-model
-        re-ranking---to reduce unfindable misreads beyond the current
-        digit/letter mapping.
-  \item \textbf{Better rotation and skew handling.} Automatic deskew before
-        recognition for photographed or imperfectly-scanned pages.
-  \item \textbf{Broader language support.} Additional bundled language models and
-        automatic script detection.
-  \item \textbf{Acceleration.} Exploiting GPU/WebAssembly SIMD acceleration and
-        preprocessing whole documents in the background to shorten time-to-fully-
-        searchable on large files.
-  \item \textbf{General web-page image text.} Extending the pipeline, via a
-        content script, to make text inside ordinary \code{<img>} elements
-        searchable, not just PDFs.
-  \item \textbf{Quantitative evaluation.} A benchmark suite measuring recognition
-        accuracy (e.g.\ character/word error rate) and per-page latency across a
-        corpus of representative scanned documents, to turn the qualitative
-        results of Section~\ref{sec:results} into reproducible numbers.
+  \item \textbf{Faster time to searchable.} Process pages in reading order and
+        offer a partial copy early for long documents.
+  \item \textbf{Wider scripts and languages.} Embed a subsetted Unicode font for
+        the invisible text, bundle more language models, and detect the script
+        automatically.
+  \item \textbf{Higher OCR accuracy.} Dictionary-based correction,
+        confidence-weighted variants, automatic deskew, and OCR at more than one
+        scale so that unusually large type is recognized as reliably as body text.
+  \item \textbf{Narrower permissions.} Request access to a site only at the moment
+        the user invokes the extension there, once it is verified that this also
+        covers downloading the PDF.
+  \item \textbf{Quantitative evaluation.} A benchmark of real scanned documents
+        measuring character and word error rates and per-page latency, to turn
+        the observations of Section~\ref{sec:results} into reproducible numbers.
+  \item \textbf{Images on ordinary web pages.} Extending the approach to text
+        inside \code{<img>} elements on regular pages, which would need a
+        different delivery mechanism than a PDF copy.
 \end{itemize}

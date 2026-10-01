@@ -1,316 +1,100 @@
-# 🔍 Searchable PDFs & Images (Ctrl+F Anywhere)
+# 🔍 Find in Images
 
-A Chrome extension that makes **scanned PDFs and image-based documents searchable using native Ctrl+F** by applying OCR and injecting a hidden text layer into the DOM.
+A Chrome extension that makes **scanned PDFs searchable with Chrome's own Ctrl+F**.
 
----
+Open a scanned PDF, press **Ctrl+Shift+F** (Control+Shift+F on Mac too), and the extension reads the text in the page images with OCR and reopens the PDF in Chrome's built-in viewer with an invisible text layer. The normal **Ctrl+F** then finds words that were only pictures before. Nothing changes visually: same viewer, same toolbar, same look.
 
-## ✨ Overview
-
-Most PDFs and images fall into two categories:
-
-* ✅ Text-based (already searchable)
-* ❌ Scanned PDFs / images (not searchable)
-
-This extension bridges that gap by using **OCR + DOM text injection** to make all content searchable using the browser’s built-in **Ctrl+F** functionality.
-
-Instead of building a custom search system, it **transforms documents so the browser can search them natively**.
+Everything runs on your computer. Nothing is uploaded anywhere.
 
 ---
 
-## 🚀 Features
+## Using it
 
-* 🔎 Search scanned PDFs using **Ctrl+F**
-* 🧠 Automatic detection of text vs image-based pages
-* 📄 Full PDF rendering using PDF.js
-* 🤖 OCR support for image-based pages (Tesseract.js)
-* ⚡ Web Worker-based processing (non-blocking UI)
-* 🧱 Invisible DOM text layer overlay
-* 💾 IndexedDB caching for processed documents
-* 🔄 Page-by-page incremental processing
-* 🖼️ Support for image-based content inside PDFs
+1. Open a PDF in Chrome (any site, or a local file).
+2. Press **Ctrl+Shift+F** (on Mac: **Control**+Shift+F, ⌃⇧F), or click the toolbar icon.
+3. Watch the badge on the icon: `…` → `42%` → `✓`. The tab then shows the searchable copy.
+4. Press **Ctrl+F** and search as usual.
+5. Press **Ctrl+Shift+F** again to switch back to the original.
 
----
+The OCR language (English, Danish, or both) is set by right-clicking the toolbar icon and choosing **OCR language**.
 
-## 🧩 Tech Stack
+If something goes wrong, the badge turns into a red **!**. Hover over the icon to see why (for example, the file is encrypted, or the page isn't a PDF).
 
-### Core
-
-* JavaScript (ES6+)
-* HTML5 / CSS3
-* Chrome Extension (Manifest V3)
-
-### PDF Processing
-
-* PDF.js (Mozilla)
-
-  * Rendering PDF pages
-  * Extracting text content
-  * Viewport & scaling system
-
-### OCR Engine
-
-* Tesseract.js
-
-  * Client-side OCR
-  * Word-level bounding boxes
-* Web Workers
-
-  * Background OCR processing
-
-### Data & Storage
-
-* IndexedDB
-
-  * OCR result caching
-  * Prevents redundant processing
-
-### Rendering System
-
-* Canvas API (via PDF.js)
-* Custom DOM Text Layer
-
-  * Invisible `<span>` overlays
-  * Enables native browser search
-
-### Chrome Integration
-
-* Content Scripts
-* Service Worker (MV3)
-* Request interception (PDF routing to custom viewer)
+**Local files** need one extra step: in `chrome://extensions` → Find in Images → **Details**, turn on **Allow access to file URLs**. If it is off, the extension opens that page for you.
 
 ---
 
-## 🏗️ Architecture
+## How it works
 
-The system follows a pipeline architecture that converts PDF/image content into searchable DOM text.
-
-```text id="v8p3x1"
-PDF Request
+```text
+Ctrl+Shift+F on a PDF tab
    ↓
-Chrome Extension Interception
+Service worker ──► offscreen document
+                     1. download the PDF (with the user's cookies)
+                     2. pdf.js: which pages paint images / have no text?
+                     3. render those pages at ~3000 px, clean up contrast
+                     4. Tesseract.js OCR → words + bounding boxes
+                     5. pdf-lib: write each word into the page as INVISIBLE
+                        text (render mode 3), sized to cover the visible word
+                     6. store the copy in Cache Storage
    ↓
-Custom PDF Viewer (PDF.js)
+tab → chrome-extension://…/searchable/<id>/<file name>?src=<original URL>
    ↓
-Page Rendering (Canvas)
-   ↓
-Text Exists?
-   ├── Yes → Extract via PDF.js text layer
-   └── No → OCR (Tesseract.js Worker)
-                 ↓
-        Bounding Box + Text Output
-                 ↓
-     Coordinate Transformation Engine
-                 ↓
-   Invisible DOM Text Layer Injection
-                 ↓
-        Native Browser Ctrl+F Search
+service worker's fetch handler serves the copy → Chrome's native PDF viewer
 ```
 
+This is the classic "searchable scan" (OCR sandwich) technique that scanners and `ocrmypdf` use, applied inside the browser.
+
+- **Native viewer only.** The copy is a real PDF, so Chrome's viewer handles search, highlighting, copy and print. The copy's URL ends in the original file name, so the tab title stays the same.
+- **Mixed PDFs.** Pages that already have real text are skipped. Text inside images on those pages is still OCR'd, and words the PDF already contains aren't duplicated.
+- **OCR cache.** Results are cached in IndexedDB by a SHA-256 hash of the file, so reopening a PDF is instant even from another URL. A changed file at the same URL is never matched to stale results. The cache prunes itself (least-recently-used) past 2,000 pages.
+- **Lifetime.** Copies are deleted when you restore the original, navigate away, close the tab or restart Chrome. A tab that comes back after a restart simply loads the original PDF. OCR workers are shut down after a minute idle to free memory.
+
+### Project layout
+
+| Path | What it is |
+| --- | --- |
+| `manifest.json` | MV3 manifest |
+| `service-worker.js` | Toolbar/shortcut trigger, badge, tab swap, serves copies |
+| `offscreen/offscreen.js` | Job queue in the offscreen document |
+| `offscreen/processor.js` | The pipeline: download → detect → OCR → embed |
+| `offscreen/ocr.js` | Page rendering, preprocessing, Tesseract worker pool |
+| `offscreen/embed.js` | Writes invisible text with pdf-lib |
+| `offscreen/ocr-postprocess.js` | OCR clean-up and misread corrections (`he11o` → `hello`) |
+| `offscreen/cache.js` | IndexedDB OCR cache |
+| `lib/` | Vendored pdf.js, pdf-lib, Tesseract.js and language data (no CDN) |
+| `test/e2e/` | End-to-end test in real Chrome, with scanned-PDF fixtures |
+
+`lib/tesseract/worker.min.js` is patched so Tesseract never selects its WASM relaxed-SIMD build, which crashes on some Chrome/Apple Silicon builds. Only the SIMD and plain LSTM cores are bundled, so keep the patch if you update Tesseract.js.
+
 ---
 
-### 🔧 Coordinate System Mapping
+## Development
 
-A key challenge is aligning OCR output with rendered PDF pages:
-
-```text id="c9m2qz"
-PDF Space (points, bottom-left origin)
-   ↓
-PDF.js Viewport
-   ↓
-Canvas Space (pixels)
-   ↓
-DOM Overlay Space (top-left origin)
+```bash
+npm install          # pdfjs-dist is used by the e2e test
+npm run package      # → dist/find-in-images-<version>.zip (upload this to the Web Store)
+npm run test:e2e     # packages, loads the zip into a throwaway Chrome profile, runs the checks
 ```
 
-This system ensures OCR text aligns precisely with the visual content across:
+To try it by hand: `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select this folder.
 
-* zoom levels
-* scaling
-* different resolutions
+`test:e2e` drives real Chrome through the DevTools protocol. It covers the scanned-PDF swap, tab title, reload, restore, URLs without `.pdf`, sign-in cookies, changed files, encrypted PDFs, local files, copy cleanup and OCR after worker release. Set `CHROME=/path/to/chrome` if Chrome isn't in the default location, or `HEADFUL=1` to watch.
 
 ---
 
-### 🧱 Core Pipeline
+## Limitations
 
-Each page goes through:
+- OCR isn't perfect: expect occasional misread characters, especially in low-quality scans.
+- Large PDFs take a while (a few seconds per scanned page, depending on the machine); the badge shows progress.
+- Password-protected or encrypted PDFs can't be modified, so they can't be made searchable.
+- Searchable text is limited to the Latin-1 character set (fine for English and Danish).
+- A PDF that can't be downloaded again (for example, one produced by a form submission) can't be processed.
 
-1. **Text Detection**
+## Privacy
 
-   * Use PDF.js `getTextContent()`
-   * Skip OCR if possible
+No data leaves your computer. See the [privacy policy](https://suhani-pandey.github.io/FindInImages/privacy.html).
 
-2. **OCR Processing (if needed)**
+## Acknowledgements
 
-   * Run Tesseract.js in Web Worker
-   * Extract text + bounding boxes
-
-3. **Normalization**
-
-   * Standardize coordinates
-   * Map OCR output to page layout
-
-4. **DOM Injection**
-
-   * Create invisible `<span>` elements
-   * Position them over the canvas
-
-5. **Browser Search Integration**
-
-   * Ctrl+F works naturally via DOM text
-
----
-
-## ⚙️ How It Works
-
-Instead of implementing a custom search engine, this extension:
-
-> Converts non-searchable content into real DOM text so the browser can handle search natively.
-
-This avoids reinventing:
-
-* search indexing
-* highlight logic
-* query parsing
-
----
-
-## 📦 Installation
-
-```bash id="h2kq9a"
-git clone https://github.com/your-username/searchable-pdfs.git
-```
-
-1. Open Chrome
-2. Go to:
-
-   ```
-   chrome://extensions/
-   ```
-3. Enable **Developer Mode**
-4. Click **Load unpacked**
-5. Select the project folder
-
----
-
-## 🧪 Usage
-
-1. Open any PDF in Chrome
-2. The extension loads the custom viewer
-3. Wait for processing (OCR if needed)
-4. Press:
-
-```text id="k1p0ld"
-Ctrl + F
-```
-
-5. Search normally 🎉
-
----
-
-## ⚡ Performance Strategy
-
-* **Lazy Processing** → Only process required pages
-* **Web Workers** → OCR runs off main thread
-* **Incremental Rendering** → Pages become searchable progressively
-* **IndexedDB Caching** → Avoid repeated OCR runs
-
----
-
-## 🧠 Key Engineering Challenges
-
-### 🔴 Coordinate Mapping Complexity
-
-Mapping OCR output to rendered PDF required synchronizing:
-
-* PDF coordinate space
-* canvas rendering space
-* DOM layout space
-* zoom and scaling factors
-
----
-
-### 🔴 Native Ctrl+F Integration
-
-Instead of intercepting search:
-
-* Real DOM text nodes are injected
-* Browser handles search automatically
-
----
-
-### 🔴 OCR Performance
-
-OCR is CPU-heavy:
-
-* solved with Web Workers
-* progressive page processing
-* caching system
-
----
-
-### 🔴 OCR Accuracy
-
-OCR may produce imperfect results:
-
-* misread characters can affect search results
-* example: `"hello"` → `"he11o"`
-
----
-
-## 📊 Project Scope
-
-| Component                    | Complexity |
-| ---------------------------- | ---------- |
-| PDF rendering                | Medium     |
-| OCR pipeline                 | Medium     |
-| Coordinate mapping           | High       |
-| DOM overlay system           | High       |
-| Chrome extension integration | Medium     |
-
----
-
-## ⏱️ Estimated Development Time
-
-* Core MVP: 50–80 hours
-* Part-time build: 8–12 weeks
-* Focused sprint: 2–3 weeks
-
----
-
-## 🛣️ Roadmap
-
-* [ ] Improve OCR accuracy (post-processing)
-* [ ] Better handling of rotated pages
-* [ ] Multi-language OCR support
-* [ ] Performance optimizations for large PDFs
-* [ ] GPU/WebAssembly acceleration
-* [ ] Preprocessing entire documents in background
-
----
-
-## ⚠️ Limitations
-
-* OCR is not 100% accurate
-* Large PDFs may take time to process
-* Complex layouts may cause slight misalignment
-* Performance depends on device capabilities
-
----
-
-## 🙌 Acknowledgements
-
-* Mozilla PDF.js
-* Tesseract.js OCR engine
-
----
-
-## 💡 Why This Project Matters
-
-This project demonstrates how to:
-
-* bridge OCR systems with browser rendering
-* integrate low-level coordinate mapping
-* leverage native browser capabilities instead of reinventing them
-* build a real-world Chrome extension with non-trivial architecture
-
-It turns static documents into **fully searchable web-native experiences**.
+[PDF.js](https://mozilla.github.io/pdf.js/) · [Tesseract.js](https://tesseract.projectnaptha.com/) · [pdf-lib](https://pdf-lib.js.org/)

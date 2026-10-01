@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="11">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+  </defs>
+  <!-- row 1: offscreen document -->
+  <rect x="8" y="10" width="704" height="62" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="20" y="35" font-weight="700" fill="#0f172a">Offscreen document</text>
+  <text x="20" y="52" fill="#64748b" font-size="10">one per browser</text>
+  <rect x="170" y="24" width="160" height="34" rx="7" fill="#fff" stroke="#475569"/><text x="250" y="45" text-anchor="middle">created on first use</text>
+  <line x1="330" y1="41" x2="358" y2="41" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="360" y="24" width="336" height="34" rx="7" fill="#fff" stroke="#475569"/><text x="528" y="45" text-anchor="middle">stays for the session · runs one job at a time</text>
+  <!-- row 2: OCR workers -->
+  <rect x="8" y="80" width="704" height="62" rx="10" fill="#f0fdfa" stroke="#99f6e4"/>
+  <text x="20" y="105" font-weight="700" fill="#115e59">OCR workers</text>
+  <text x="20" y="122" fill="#64748b" font-size="10">min(4, cores − 1) per language</text>
+  <rect x="170" y="94" width="120" height="34" rx="7" fill="#fff" stroke="#0d9488"/><text x="230" y="115" text-anchor="middle">started by a job</text>
+  <line x1="290" y1="111" x2="318" y2="111" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="320" y="94" width="120" height="34" rx="7" fill="#fff" stroke="#0d9488"/><text x="380" y="115" text-anchor="middle">reused by jobs</text>
+  <line x1="440" y1="111" x2="468" y2="111" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="470" y="94" width="226" height="34" rx="7" fill="#fff" stroke="#0d9488"/><text x="583" y="115" text-anchor="middle">60 s with no job → terminated</text>
+  <!-- row 3: pdf.js document -->
+  <rect x="8" y="150" width="704" height="62" rx="10" fill="#faf5ff" stroke="#e9d5ff"/>
+  <text x="20" y="175" font-weight="700" fill="#5b21b6">pdf.js document</text>
+  <text x="20" y="192" fill="#64748b" font-size="10">one per job</text>
+  <rect x="170" y="164" width="200" height="34" rx="7" fill="#fff" stroke="#7c3aed"/><text x="270" y="185" text-anchor="middle">loaded from the downloaded bytes</text>
+  <line x1="370" y1="181" x2="398" y2="181" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="400" y="164" width="296" height="34" rx="7" fill="#fff" stroke="#7c3aed"/><text x="548" y="185" text-anchor="middle">destroyed when the job ends (even on error)</text>
+  <!-- row 4: searchable copy -->
+  <rect x="8" y="220" width="704" height="84" rx="10" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="20" y="245" font-weight="700" fill="#92400e">Searchable copy</text>
+  <text x="20" y="262" fill="#64748b" font-size="10">Cache Storage</text>
+  <rect x="170" y="234" width="130" height="34" rx="7" fill="#fff" stroke="#d97706"/><text x="235" y="255" text-anchor="middle">saved at job end</text>
+  <line x1="300" y1="251" x2="328" y2="251" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="330" y="234" width="110" height="34" rx="7" fill="#fff" stroke="#d97706"/><text x="385" y="255" text-anchor="middle">shown in its tab</text>
+  <line x1="440" y1="251" x2="468" y2="251" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="470" y="234" width="226" height="34" rx="7" fill="#fff" stroke="#d97706"/><text x="583" y="249" text-anchor="middle" font-size="10.5">deleted on restore · navigate away</text><text x="583" y="262" text-anchor="middle" font-size="10.5">· tab close · browser start</text>
+  <text x="433" y="292" text-anchor="middle" fill="#92400e" font-size="10">a copy URL that comes back later redirects to the original PDF</text>
+  <!-- row 5: OCR cache -->
+  <rect x="8" y="312" width="704" height="62" rx="10" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="20" y="337" font-weight="700" fill="#1e3a8a">OCR cache</text>
+  <text x="20" y="354" fill="#64748b" font-size="10">IndexedDB, per page</text>
+  <rect x="170" y="326" width="130" height="34" rx="7" fill="#fff" stroke="#2563eb"/><text x="235" y="347" text-anchor="middle">written after OCR</text>
+  <line x1="300" y1="343" x2="328" y2="343" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="330" y="326" width="140" height="34" rx="7" fill="#fff" stroke="#2563eb"/><text x="400" y="347" text-anchor="middle">a hit refreshes its age</text>
+  <line x1="470" y1="343" x2="498" y2="343" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="500" y="326" width="196" height="34" rx="7" fill="#fff" stroke="#2563eb"/><text x="598" y="341" text-anchor="middle" font-size="10.5">oldest pruned past 2,000 pages;</text><text x="598" y="354" text-anchor="middle" font-size="10.5">format version invalidates</text>
+  <text x="360" y="392" text-anchor="middle" fill="#64748b" font-size="10">Every resource has an owner and an end — nothing grows for the lifetime of the browser.</text>
+</svg>

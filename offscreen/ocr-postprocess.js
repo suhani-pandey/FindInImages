@@ -53,9 +53,10 @@ export function postProcessWords(words, { minConfidence = DEFAULT_MIN_CONFIDENCE
   return out;
 }
 
-// Strip characters that aren't letters/digits from both ends of the token
+// Strip characters that aren't letters/digits from both ends of the token.
+// Unicode-aware so Danish words keep their æ/ø/å ("på" must not become "p").
 function trimNoise(s) {
-  return s.replace(/^[^a-zA-Z0-9]+/, "").replace(/[^a-zA-Z0-9]+$/, "");
+  return s.replace(/^[^\p{L}\p{N}]+/u, "").replace(/[^\p{L}\p{N}]+$/u, "");
 }
 
 /**
@@ -64,7 +65,7 @@ function trimNoise(s) {
  * "ca5h"→"cash"). Returns null when no correction applies.
  */
 function correctionVariant(text) {
-  const hasLetter = /[a-zA-Z]/.test(text);
+  const hasLetter = /\p{L}/u.test(text);
   const hasDigit  = /[0-9]/.test(text);
   if (!hasLetter || !hasDigit) return null;
 

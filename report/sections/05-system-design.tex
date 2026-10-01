@@ -2,30 +2,28 @@
 \label{sec:design}
 
 \subsection{Overview}
-\proj{} is structured as a \emph{pipeline} that converts a PDF the user wants to
-search into searchable DOM text. Chrome's native PDF viewer remains the default;
-when the user activates the extension on a PDF (by keyboard shortcut or the
-toolbar icon---see Section~\ref{sec:design}, decision~\ref{dec:ondemand}), the
-service worker switches the tab to a custom viewer. That viewer renders each
-page, checks whether it paints raster images or lacks extractable text, recovers
-image text with OCR where needed, normalizes coordinates, and injects an
-invisible text layer that the browser's find feature can search.
+\proj{} is a \emph{pipeline} that turns a scanned PDF into a searchable copy of
+itself and then lets Chrome show that copy. Chrome's native PDF viewer displays
+every PDF as usual. When the user invokes the extension on one (keyboard shortcut
+or toolbar icon), the service worker hands the job to a hidden offscreen
+document. The tab keeps showing the original while the offscreen document
+downloads the file, finds the pages that paint images or have no text,
+recognizes them with OCR, and writes the recognized words into a copy as
+invisible text. The tab is then navigated to the copy, still in Chrome's own
+viewer, where Chrome's own $\mathrm{Ctrl}{+}\mathrm{F}$ finds the words.
 Figure~\ref{fig:pipeline} shows the end-to-end flow.
 
 \begin{figure}[p]
   \centering
-  \vspace*{6mm}
+  \vspace*{2mm}
   \begin{tikzpicture}[
-      %% Generous vertical gap between every node
-      node distance=14mm,
-      %% Main-column boxes
+      node distance=10mm,
       box/.style={rectangle, rounded corners=4pt, draw=accent!70, fill=accent!6,
-                  text width=6.4cm, align=center, minimum height=13mm,
-                  font=\small, inner sep=7pt},
-      %% OCR-branch boxes (slightly shaded to mark the conditional path)
+                  text width=6.4cm, align=center, minimum height=12mm,
+                  font=\small, inner sep=6pt},
       side/.style={rectangle, rounded corners=4pt, draw=accent!80, fill=accent!12,
-                   text width=4.6cm, align=center, minimum height=13mm,
-                   font=\small, inner sep=7pt},
+                   text width=4.6cm, align=center, minimum height=12mm,
+                   font=\small, inner sep=6pt},
       dec/.style={diamond, aspect=3.0, draw=accent!70, fill=accent!6,
                   align=center, font=\small, inner sep=3pt},
       io/.style={rectangle, draw=rulegray, fill=codebg, text width=6.4cm,
@@ -34,211 +32,229 @@ Figure~\ref{fig:pipeline} shows the end-to-end flow.
       lbl/.style={font=\scriptsize\itshape, fill=white, inner sep=2pt},
     ]
 
-    %% ── Left (main) column ──────────────────────────────────────────────────
-    \node[io]  (req)    {PDF open in Chrome's native viewer};
+    %% ── Main column ─────────────────────────────────────────────────────────
+    \node[io]  (req) {Scanned PDF open in Chrome's native viewer};
 
-    \node[box, below=of req]    (sw)
-      {User triggers (\code{Ctrl+Shift+F} or icon);\\
-       service worker opens it in the custom viewer};
+    \node[box, below=of req] (sw)
+      {User presses \code{Ctrl+Shift+F} or clicks the icon;\\
+       service worker starts the offscreen document};
 
-    \node[box, below=of sw]     (render)
-      {PDF.js renders page to \code{<canvas>}\\
-       and extracts native text items};
+    \node[box, below=of sw] (dl)
+      {Download the PDF (with the user's cookies),\\
+       check it is a PDF, hash its bytes};
 
-    \node[dec, below=14mm of render, text width=3.2cm] (dec)
-      {Images present\\or no text?};
+    \node[dec, below=12mm of dl, text width=3.2cm] (dec)
+      {Page paints images\\or has no text?};
 
-    \node[box, below=46mm of dec] (norm)
-      {Normalize word coordinates;\\
-       cache results in IndexedDB};
+    \node[box, below=44mm of dec] (embed)
+      {pdf-lib appends the invisible words\\
+       (\code{3 Tr}) to the pages that got any};
 
-    \node[box, below=of norm]   (inject)
-      {Inject invisible \code{<span>} text layer\\
-       positioned over the canvas};
+    \node[box, below=of embed] (save)
+      {Save the copy into Cache Storage};
 
-    \node[io,  below=of inject] (search)
-      {Searchable via custom find bar
-       ($\mathrm{Ctrl}{+}\mathrm{F}$)};
+    \node[box, below=of save] (swap)
+      {Tab navigates to \code{chrome-extension://\dots/searchable/\dots};\\
+       the service worker serves the copy};
 
-    %% ── Right (OCR) branch ──────────────────────────────────────────────────
-    \node[side, right=26mm of dec] (ocr)
-      {Tesseract.js OCR\\
-       (Web Worker pool)};
+    \node[io, below=of swap] (search)
+      {Chrome's own viewer and $\mathrm{Ctrl}{+}\mathrm{F}$ now find the image text};
 
-    \node[side, below=14mm of ocr] (merge)
-      {Merge \& de-duplicate\\
-       native + OCR words};
+    %% ── OCR branch ──────────────────────────────────────────────────────────
+    \node[side, right=24mm of dec] (ocr)
+      {OCR the page (or reuse the cache):\\
+       render $\approx$3000\,px, preprocess,\\
+       Tesseract.js worker pool};
+
+    \node[side, below=12mm of ocr] (map)
+      {Map words into PDF space;\\
+       drop words the page\\already contains};
 
     %% ── Arrows ──────────────────────────────────────────────────────────────
-    \draw[arr] (req)    -- (sw);
-    \draw[arr] (sw)     -- (render);
-    \draw[arr] (render) -- (dec);
-
-    %% "no" path: straight down the left column, skips OCR
+    \draw[arr] (req) -- (sw);
+    \draw[arr] (sw)  -- (dl);
+    \draw[arr] (dl)  -- (dec);
     \draw[arr] (dec.south)
-      -- node[lbl, left=4pt] {no --- text-only page}
-      (norm.north);
-
-    %% "yes" path: right to OCR branch
+      -- node[lbl, left=4pt] {no --- page left as is}
+      (embed.north);
     \draw[arr] (dec.east)
-      -- node[lbl, above=3pt] {yes --- images found}
+      -- node[lbl, above=3pt] {yes}
       (ocr.west);
-
-    \draw[arr] (ocr) -- (merge);
-
-    %% merge rejoins main column via a clean L-shaped connector
-    \draw[arr] (merge.south) -- ++(0,-10mm) -| (norm.east);
-
-    \draw[arr] (norm)   -- (inject);
-    \draw[arr] (inject) -- (search);
+    \draw[arr] (ocr) -- (map);
+    \draw[arr] (map.south) -- ++(0,-8mm) -| (embed.east);
+    \draw[arr] (embed) -- (save);
+    \draw[arr] (save)  -- (swap);
+    \draw[arr] (swap)  -- (search);
   \end{tikzpicture}
-  \vspace*{4mm}
-  \caption{End-to-end processing pipeline. Each page is rendered and its native text
-           extracted. If the page contains raster image operators \emph{or} has no
-           extractable text (right branch), Tesseract.js runs OCR on a high-resolution
-           offscreen canvas and the results are merged with any native text, dropping
-           duplicates. Text-only pages skip OCR and pass straight to normalization
-           (left path). Both paths converge at coordinate normalization before the
-           invisible text layer is injected over the canvas.}
+  \vspace*{2mm}
+  \caption{End-to-end processing pipeline. Every page is checked; pages that paint
+           raster images \emph{or} have no extractable text are OCR'd (right
+           branch) unless the cache already holds their words, and the recognized
+           words are mapped into the page's coordinate system with duplicates of
+           existing text removed. pdf-lib then writes them into a copy as invisible
+           text. The copy is shown at an extension URL in Chrome's native viewer,
+           so the user never sees anything but Chrome's own interface.}
   \label{fig:pipeline}
 \end{figure}
 
 \subsection{Components}
 \begin{description}[leftmargin=1.4em, style=nextline]
-  \item[Activation] A service worker, idle until invoked, responds to the toolbar
-        icon or the keyboard shortcut by switching the active tab to
-        \code{viewer.html}, preserving the original PDF URL as a query parameter
-        (and switching back to the native viewer if invoked again).
-  \item[Custom viewer] A self-contained HTML/JS page that owns rendering, OCR
-        orchestration, the text layer, and the find UI.
-  \item[Rendering] PDF.js rasterizes each page to a canvas, lazily and at the
-        device pixel ratio for crisp output.
-  \item[Text detection] For each page the viewer asks PDF.js for its text content
-        and operator list to decide whether OCR is required.
-  \item[OCR] A pool of Tesseract.js Web Workers recognizes text on image pages,
-        returning words with bounding boxes.
-  \item[Normalization \& caching] Word coordinates are normalized to the unit
-        square and cached in IndexedDB so results are reusable across zoom levels
-        and sessions.
-  \item[Text-layer injection] Invisible, individually-scaled \code{<span>}
-        elements are positioned over the canvas.
-  \item[Search] A custom find bar searches the injected text and draws highlight
-        overlays.
+  \item[Activation and coordination] The service worker responds to the toolbar
+        icon or the keyboard shortcut, starts the offscreen document, sends it the
+        job, shows progress on the icon's badge, and navigates the tab when the
+        copy is ready. Invoked on a copy, it restores the original.
+  \item[Offscreen document] A hidden extension page with a DOM. It queues jobs
+        and runs the pipeline; nothing in it is ever visible.
+  \item[Download and identity] The PDF is fetched again from its URL with the
+        user's cookies, checked for the \code{\%PDF-} signature, and identified
+        by the SHA-256 of its bytes.
+  \item[Text detection] For each page, PDF.js reports existing text and whether
+        the page paints raster images.
+  \item[OCR] Pages that need it are rendered offscreen at high resolution,
+        preprocessed, and recognized by a pool of Tesseract.js workers. Results
+        are cached in IndexedDB.
+  \item[Mapping and embedding] Recognized word boxes are mapped into PDF user
+        space, de-duplicated against existing text, and written into the page as
+        invisible text by pdf-lib.
+  \item[Delivery] The saved copy goes into Cache Storage; the service worker's
+        \code{fetch} handler serves it at an extension URL, and Chrome's viewer
+        displays it.
+  \item[Search] Chrome's native find, highlighting, selection, and copy---no
+        code of ours runs at search time.
 \end{description}
 
 \subsection{The Coordinate-Mapping Problem}
-The hardest part of the system is geometric. Text originates in up to four
-distinct coordinate spaces, and the injected overlay must align with the rendered
-page in all of them simultaneously:
+\label{sec:coords}
+The geometric problem is to place each invisible word so that Chrome's find
+highlight lands on the visible word. Chrome draws that highlight from the glyphs'
+own geometry---their baseline, font size and advance widths---so the text must be
+written at the right position, size, angle, and width in \emph{PDF user space}.
+The recognized word, however, starts life in a different space:
 
 \begin{center}
 \begin{tikzpicture}[
     sp/.style={rectangle, rounded corners=2pt, draw=accent!70, fill=accent!6,
-               align=center, font=\small\ttfamily, minimum height=9mm,
-               inner sep=4pt},
-    a/.style={-{Stealth[length=2.2mm]}, draw=accent!80, thick}]
-  \node[sp] (pdf) {PDF space\\\footnotesize\rmfamily points, $\uparrow$ origin};
-  \node[sp, right=7mm of pdf] (vp) {Viewport\\\footnotesize\rmfamily PDF.js scale};
-  \node[sp, right=7mm of vp] (cv) {Canvas\\\footnotesize\rmfamily device px};
-  \node[sp, right=7mm of cv] (dom) {DOM overlay\\\footnotesize\rmfamily CSS px, $\downarrow$ origin};
-  \draw[a] (pdf) -- (vp);
-  \draw[a] (vp) -- (cv);
-  \draw[a] (cv) -- (dom);
+               align=center, font=\small, minimum height=10mm,
+               inner sep=4pt, text width=2.3cm},
+    a/.style={-{Stealth[length=2.2mm]}, draw=accent!80, thick},
+    lbl/.style={font=\scriptsize\itshape, align=center}]
+  \node[sp] (ocr) {OCR canvas\\\footnotesize pixels, $\downarrow$ origin};
+  \node[sp, right=9mm of ocr] (norm) {Normalized\\\footnotesize $[0,1]^2$, cached};
+  \node[sp, right=9mm of norm] (vis) {Visual page\\\footnotesize viewport, rotated};
+  \node[sp, right=9mm of vis] (pdf) {PDF user space\\\footnotesize points, $\uparrow$ origin};
+  \draw[a] (ocr) -- node[lbl,above]{$\div W_{\text{ocr}}$} (norm);
+  \draw[a] (norm) -- node[lbl,above]{$\times W,H$} (vis);
+  \draw[a] (vis) -- node[lbl,above]{$T_V^{-1}$} (pdf);
 \end{tikzpicture}
 \end{center}
 
-PDF space uses typographic points with a bottom-left origin; the PDF.js viewport
-applies a scale (and any page rotation); the canvas backing store is further
-scaled by the device pixel ratio for high-DPI sharpness; and the DOM overlay uses
-CSS pixels with a top-left origin. A glyph recovered or extracted in one space
-must be drawn at the corresponding location in the overlay, or search highlights
-and text selection drift away from the visible characters.
-
-For \emph{native} PDF text, PDF.js supplies, per item, an affine transform
-$M_{\text{item}}$ and the viewport's transform $M_{\text{vp}}$ (which already
-folds in page rotation). The glyph's full matrix in device space is their product
-\begin{equation}
-  M \;=\; M_{\text{vp}}\, M_{\text{item}},
-  \qquad
-  M=\begin{bmatrix} a & c & e\\ b & d & f \\ 0 & 0 & 1\end{bmatrix},
-  \label{eq:matmul}
-\end{equation}
-from which the baseline angle and device-space font height follow directly:
-\begin{equation}
-  \theta = \operatorname{atan2}(b,\,a),
-  \qquad
-  h = \sqrt{c^{2}+d^{2}} .
-  \label{eq:angle}
-\end{equation}
-Because rotation falls out of the matrix in Eq.~\eqref{eq:angle}, rotated pages
-and rotated text are handled without special cases. The span's top-left corner is
-obtained by stepping from the baseline origin $(e,f)$ up by the ascent
-$h_a \approx 0.8\,h$ along the text direction.
-
-For \emph{OCR} text, Tesseract reports pixel bounding boxes in the
-high-resolution OCR canvas. These are normalized to the unit square by dividing
-by the OCR canvas dimensions,
+Tesseract reports word boxes $(x_0,y_0,x_1,y_1)$ in pixels of the OCR canvas.
+These are first normalized by the canvas size,
 \begin{equation}
   \tilde{x} = \frac{x}{W_{\text{ocr}}},\qquad
   \tilde{y} = \frac{y}{H_{\text{ocr}}},
   \label{eq:normalize}
 \end{equation}
-so the cached result is independent of the resolution at which OCR happened. At
-draw time they are denormalized into the text layer's CSS-pixel space using the
-\emph{viewport} dimensions---not the DPR-scaled canvas dimensions---so the
-invisible text and the visible page share one coordinate system.
+so that cached results do not depend on the resolution at which OCR ran.
+
+The OCR canvas was rendered through a PDF.js viewport, whose affine transform
+$T_V$ maps PDF user space to the \emph{visual} page (rotation and the flip from a
+bottom-left to a top-left origin included). Let $W \times H$ be that page's size
+at scale~1. The word's baseline is taken at $80\%$ of its box height, and four
+points are mapped back with the inverse transform $T_V^{-1}$ (PDF.js
+\code{convertToPdfPoint}):
+\begin{equation}
+\begin{aligned}
+  y_b &= \bigl(\tilde{y}_0 + 0.8\,(\tilde{y}_1-\tilde{y}_0)\bigr)\,H, \\
+  S &= T_V^{-1}(\tilde{x}_0 W,\; y_b), &
+  E &= T_V^{-1}(\tilde{x}_1 W,\; y_b), \\
+  P_t &= T_V^{-1}(\tilde{x}_0 W,\; \tilde{y}_0 H), &
+  P_b &= T_V^{-1}(\tilde{x}_0 W,\; \tilde{y}_1 H).
+\end{aligned}
+\label{eq:points}
+\end{equation}
+$S$ and $E$ are the baseline's start and end in PDF space, and $P_t$, $P_b$ the
+box's top and bottom. From them follow the word's width, its font size, and its
+baseline angle:
+\begin{equation}
+  w = \lVert E - S \rVert, \qquad
+  h = \lVert P_b - P_t \rVert, \qquad
+  \theta = \operatorname{atan2}\bigl(E_y - S_y,\; E_x - S_x\bigr).
+  \label{eq:angle}
+\end{equation}
+Because rotation is folded into $T_V$, rotated pages need no special case: on a
+page with \code{/Rotate 90}, $\theta$ simply comes out as a right angle.
+
+Each word is then written as one invisible text object. With $w_{\text{nat}}$ the
+word's natural width in Helvetica at size $h$, the horizontal scaling (operator
+\code{Tz}, in percent) stretches or squeezes it to exactly $w$:
+\begin{equation}
+  s = \operatorname{clamp}\!\Bigl(100\,\frac{w}{w_{\text{nat}}},\; 1,\; 1000\Bigr),
+  \qquad
+  T_m = \begin{bmatrix} \cos\theta & \sin\theta & 0\\ -\sin\theta & \cos\theta & 0\\ S_x & S_y & 1 \end{bmatrix}.
+  \label{eq:tz}
+\end{equation}
+The resulting content-stream fragment is
+\code{BT 3~Tr /F~$h$~Tf $s$~Tz $T_m$~Tm (word)~Tj ET}. Font size $h$ makes the
+highlight as tall as the visible word, $s$ makes it as wide, and $T_m$ puts it
+in the same place at the same angle.
+
+Existing PDF text lives in user space already (PDF.js returns each item's
+transform), so de-duplication compares like with like: an OCR word is dropped
+when the midpoint of its baseline, $(S+E)/2$, falls inside an existing text item's
+box \emph{and} that item's text contains the word. Different text at the same
+spot---for example a caption baked into an image next to real text---is kept.
 
 \subsection{Key Design Decisions}
-Five decisions shape the rest of the system and are justified where they appear
-in Section~\ref{sec:impl}:
+Seven decisions shape the rest of the system. Several reverse earlier choices,
+and Section~\ref{sec:process} tells how each was reached.
 
 \begin{enumerate}
-  \item \textbf{Activate on demand; never replace the native viewer by default.}
-        \label{dec:ondemand}
-        Chrome renders PDFs in a built-in viewer backed by the sandboxed PDFium
-        plugin, which extensions cannot script or inject into. The only way to add
-        a searchable text layer to an image PDF is therefore to re-render it in a
-        custom viewer. An earlier design did this for \emph{every} PDF by
-        intercepting all PDF navigations with
-        \code{declarativeNetRequest}~\cite{dnr} and redirecting them to the custom
-        viewer. That worked but carried a heavy cost: it replaced Chrome's native
-        PDF experience for \emph{all} documents---including ordinary text PDFs that
-        are already searchable---discarding the native toolbar (page thumbnails,
-        rotate, annotate, print, download), the Google~Lens / Cast / reading-mode
-        integrations, and the full native right-click menu, none of which can be
-        reproduced in a DOM-based viewer. For a text PDF the extension thus
-        \emph{removed} capability while adding nothing, since the browser's
-        $\mathrm{Ctrl}{+}\mathrm{F}$ already works there.
-        Because the extension's value is confined to image and scanned PDFs---and
-        those are exactly the documents where the native toolbar features matter
-        least---the production design inverts the default. Chrome's native viewer
-        handles every PDF as usual, and the OCR viewer is invoked \emph{on demand}
-        (a browser-global keyboard shortcut, \code{Ctrl+Shift+F} /
-        \code{Cmd+Shift+F}, or the toolbar icon) only when the user actually needs
-        to search a non-searchable document; invoking it again returns the tab to
-        the native viewer. This preserves the full native experience by default,
-        scopes the custom viewer to the case that needs it, and---as a side
-        benefit---shrinks the permission footprint markedly: the extension no
-        longer needs \code{declarativeNetRequest}, a broad content script, or a
-        storage permission, requesting only the host access PDF.js needs to fetch
-        the document. The remaining cost is discoverability: with the native viewer
-        in front, the extension has no surface on which to advertise the shortcut,
-        so first-time users must learn it from the store listing or the icon
-        (Section~\ref{sec:limitations}).
-  \item \textbf{Never modify the original PDF.} The system is a strictly
-        read-only render plus an overlay: the source file's bytes and format are
-        left untouched, and all recovered text lives in a separate, invisible DOM
-        layer. This constraint, fixed from the outset, rules out any
-        rewrite-the-PDF approach and is the reason searchability is added
-        \emph{around} the document rather than \emph{into} it.
-  \item \textbf{Inject real text instead of intercepting search.} This reuses the
-        browser's indexing, matching, and (optionally) highlighting, and keeps
-        recovered text selectable and copyable.
-  \item \textbf{Separate the OCR image from the display image.} Display fidelity
-        and OCR legibility have different requirements, so the page is rendered
-        twice: once for the screen at the device pixel ratio, and once offscreen
-        at high resolution purely for recognition.
-  \item \textbf{Lazy rendering with background indexing.} Pages render as they
-        approach the viewport for responsiveness, while a separate idle-time pass
-        guarantees that off-screen pages still become searchable.
+  \item \textbf{Chrome's viewer is the only interface: change the file, not the
+        viewer.} \label{dec:native}
+        Chrome renders PDFs in a built-in viewer that extensions cannot script
+        or extend. Earlier versions of \proj{} therefore re-rendered the PDF in
+        a custom PDF.js viewer with an invisible DOM text layer. No DOM viewer
+        can reproduce Chrome's (its toolbar, thumbnails, printing, Google~Lens,
+        right-click menu, and above all its find bar), and an attempt to imitate
+        it was rejected by the user. The final design gives Chrome a different
+        \emph{file} instead---one that contains the text---so every pixel of
+        interface is Chrome's own.
+  \item \textbf{Never modify the original; write into a copy.} \label{dec:copy}
+        The source file is downloaded and left untouched. Only a copy receives
+        the invisible layer, and because mode-3 text paints nothing, the copy
+        renders pixel-identically to the original. Invoking the extension again
+        restores the original URL.
+  \item \textbf{Activate on demand.} \label{dec:ondemand}
+        The extension's value is real only for scanned and image PDFs, and OCR is
+        expensive, so nothing happens until the user asks. Ordinary PDFs keep
+        Chrome's default behaviour with zero overhead.
+  \item \textbf{Serve the copy from the extension's origin, not from a
+        \code{blob:} URL.} \label{dec:serve}
+        The first version opened the copy as a \code{blob:} URL. In real Chrome
+        that navigation never completes: an extension's blob URL cannot be
+        opened from an ordinary website tab, consistent with Chrome's
+        partitioning of blob URLs by site~\cite{blobpartition}. The copy is
+        therefore stored in Cache Storage and served by the service worker's
+        \code{fetch} handler at
+        \code{chrome-extension://<id>/searchable/<token>/<file name>?src=<original>}.
+        Ending the path in the original file name keeps the tab title; the
+        \code{src} parameter makes restoring trivial and lets an expired copy
+        fall back to the original instead of an error page.
+  \item \textbf{Run the pipeline in a hidden document.} \label{dec:offscreen}
+        Rendering and OCR need a DOM and Web Workers, which service workers lack,
+        and must not disturb the tab. An offscreen document provides both, and
+        its PDF.js rendering exists purely for OCR (Section~\ref{sec:impl}).
+  \item \textbf{Identify documents by content.} \label{dec:hash}
+        OCR results are cached by the SHA-256 of the file's bytes rather than its
+        URL. The same file reached through two URLs is recognized once, and a
+        changed file at the same URL (an edited local file, a ``latest.pdf''
+        link) can never receive stale words.
+  \item \textbf{Keep a long-lived background component bounded.}
+        \label{dec:bounded}
+        The offscreen document can live for the whole browser session, so
+        every resource it creates has an owner and an end: pdf.js documents are
+        destroyed after each job, OCR workers are released after a minute idle,
+        copies are deleted when their tab closes or navigates away (and at
+        browser start-up), and the OCR cache is pruned to about 2{,}000 pages.
 \end{enumerate}

@@ -1,10 +1,11 @@
 {
   "name": "find-in-images",
-  "version": "1.0.0",
-  "description": "A Chrome extension that makes **scanned PDFs and image-based documents searchable using native Ctrl+F** by applying OCR and injecting a hidden text layer into the DOM.",
+  "version": "2.0.0",
+  "description": "Chrome extension that makes scanned PDFs searchable with Chrome's native Ctrl+F by embedding an invisible OCR text layer.",
   "main": "service-worker.js",
   "scripts": {
-    "package": "zip -r find-in-images-$(node -p \"require('./manifest.json').version\").zip manifest.json icons/ viewer/ lib/ service-worker.js --exclude '*.DS_Store'"
+    "package": "mkdir -p dist && rm -f dist/find-in-images-$(node -p \"require('./manifest.json').version\").zip && zip -r dist/find-in-images-$(node -p \"require('./manifest.json').version\").zip manifest.json service-worker.js icons/ lib/ offscreen/ --exclude '*.DS_Store'",
+    "test:e2e": "node test/e2e/run.mjs"
   },
   "repository": {
     "type": "git",

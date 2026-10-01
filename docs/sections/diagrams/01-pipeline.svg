@@ -1,39 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 600" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 756" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="13">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
   </defs>
-  <rect x="180" y="10" width="360" height="44" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="360" y="37" text-anchor="middle" fill="#1e3a8a">User opens a <tspan font-family="monospace">.pdf</tspan> link in Chrome</text>
+  <rect x="170" y="10" width="380" height="44" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="360" y="37" text-anchor="middle" fill="#1e3a8a">User presses <tspan font-family="monospace">Ctrl+Shift+F</tspan> on a PDF tab (or clicks the icon)</text>
   <line x1="360" y1="54" x2="360" y2="80" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <rect x="180" y="82" width="360" height="44" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="360" y="103" text-anchor="middle" fill="#1e3a8a">Service worker — declarativeNetRequest rule</text>
-  <text x="360" y="118" text-anchor="middle" fill="#64748b" font-size="11">redirects to the bundled viewer, preserving the URL</text>
-  <line x1="360" y1="126" x2="360" y2="152" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <rect x="180" y="154" width="360" height="44" rx="9" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
-  <text x="360" y="175" text-anchor="middle" fill="#0f172a">Custom viewer (viewer.html + viewer.js)</text>
-  <text x="360" y="190" text-anchor="middle" fill="#64748b" font-size="11">orchestrates the whole pipeline</text>
-  <line x1="360" y1="198" x2="360" y2="224" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <rect x="180" y="226" width="360" height="44" rx="9" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.5"/>
-  <text x="360" y="247" text-anchor="middle" fill="#5b21b6">PDF.js renders each page &#8594; Canvas</text>
-  <text x="360" y="262" text-anchor="middle" fill="#64748b" font-size="11">lazily, fit-to-width, DPR-scaled for crispness</text>
-  <line x1="360" y1="270" x2="360" y2="296" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <rect x="200" y="298" width="320" height="46" rx="9" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
-  <text x="360" y="319" text-anchor="middle" fill="#0f172a">Detect content: native text? images?</text>
-  <text x="360" y="334" text-anchor="middle" fill="#64748b" font-size="11">getTextContent() + getOperatorList()</text>
-  <line x1="300" y1="344" x2="210" y2="372" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <line x1="420" y1="344" x2="510" y2="372" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <rect x="60" y="374" width="270" height="48" rx="9" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="195" y="395" text-anchor="middle" fill="#166534">Inject native PDF text</text>
-  <text x="195" y="410" text-anchor="middle" fill="#64748b" font-size="11">accurate &amp; fast — always done</text>
-  <rect x="390" y="374" width="270" height="48" rx="9" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
-  <text x="525" y="395" text-anchor="middle" fill="#115e59">OCR image regions (Tesseract.js)</text>
-  <text x="525" y="410" text-anchor="middle" fill="#64748b" font-size="11">high-res, preprocessed, in workers</text>
-  <line x1="195" y1="422" x2="320" y2="452" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <line x1="525" y1="422" x2="400" y2="452" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <rect x="180" y="454" width="360" height="48" rx="9" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="360" y="475" text-anchor="middle" fill="#166534">Map coordinates &#8594; invisible DOM text layer</text>
-  <text x="360" y="490" text-anchor="middle" fill="#64748b" font-size="11">dedup overlaps; position spans over the canvas</text>
-  <line x1="360" y1="502" x2="360" y2="528" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <rect x="180" y="530" width="360" height="46" rx="9" fill="#eef2ff" stroke="#4338ca" stroke-width="2"/>
-  <text x="360" y="558" text-anchor="middle" fill="#3730a3" font-weight="700">Native browser Ctrl+F searches the page</text>
+  <rect x="170" y="82" width="380" height="48" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="360" y="103" text-anchor="middle" fill="#1e3a8a">Service worker</text>
+  <text x="360" y="119" text-anchor="middle" fill="#64748b" font-size="11">starts the offscreen document · shows progress on the badge</text>
+  <line x1="360" y1="130" x2="360" y2="156" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="170" y="158" width="380" height="48" rx="9" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+  <text x="360" y="179" text-anchor="middle" fill="#0f172a">Offscreen document (processor.js)</text>
+  <text x="360" y="195" text-anchor="middle" fill="#64748b" font-size="11">download with cookies · check <tspan font-family="monospace">%PDF-</tspan> · SHA-256 of the bytes</text>
+  <line x1="360" y1="206" x2="360" y2="232" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="170" y="234" width="380" height="48" rx="9" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="360" y="255" text-anchor="middle" fill="#5b21b6">PDF.js, per page: existing text? images?</text>
+  <text x="360" y="271" text-anchor="middle" fill="#64748b" font-size="11">getTextContent() + getOperatorList()</text>
+  <line x1="300" y1="282" x2="200" y2="312" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="420" y1="282" x2="520" y2="312" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="228" y="293" text-anchor="end" fill="#64748b" font-size="11">text only</text>
+  <text x="492" y="293" fill="#64748b" font-size="11">images or no text</text>
+  <rect x="50" y="314" width="280" height="48" rx="9" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="190" y="335" text-anchor="middle" fill="#166534">Page left as it is</text>
+  <text x="190" y="351" text-anchor="middle" fill="#64748b" font-size="11">Chrome can already search it</text>
+  <rect x="390" y="314" width="290" height="48" rx="9" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="535" y="335" text-anchor="middle" fill="#115e59">OCR the page (or reuse the cache)</text>
+  <text x="535" y="351" text-anchor="middle" fill="#64748b" font-size="11">≈3000 px · contrast + sharpen · Tesseract workers</text>
+  <line x1="535" y1="362" x2="535" y2="388" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="390" y="390" width="290" height="48" rx="9" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="535" y="411" text-anchor="middle" fill="#115e59">Map words into PDF user space</text>
+  <text x="535" y="427" text-anchor="middle" fill="#64748b" font-size="11">drop words the page already contains</text>
+  <line x1="190" y1="362" x2="300" y2="470" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="535" y1="438" x2="420" y2="470" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="170" y="472" width="380" height="48" rx="9" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="360" y="493" text-anchor="middle" fill="#166534">pdf-lib writes the words into a COPY as invisible text</text>
+  <text x="360" y="509" text-anchor="middle" fill="#64748b" font-size="11">3 Tr · sized to cover each word · original untouched</text>
+  <line x1="360" y1="520" x2="360" y2="546" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="170" y="548" width="380" height="44" rx="9" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="360" y="575" text-anchor="middle" fill="#92400e">Copy saved in Cache Storage</text>
+  <line x1="360" y1="592" x2="360" y2="618" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="140" y="620" width="440" height="48" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="360" y="641" text-anchor="middle" fill="#1e3a8a">Tab → <tspan font-family="monospace" font-size="12">chrome-extension://…/searchable/&lt;id&gt;/&lt;file name&gt;</tspan></text>
+  <text x="360" y="657" text-anchor="middle" fill="#64748b" font-size="11">the service worker's fetch handler serves the copy from Cache Storage</text>
+  <line x1="360" y1="668" x2="360" y2="694" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="170" y="696" width="380" height="46" rx="9" fill="#eef2ff" stroke="#4338ca" stroke-width="2"/>
+  <text x="360" y="724" text-anchor="middle" fill="#3730a3" font-weight="700">Chrome's own viewer — native Ctrl+F finds image text</text>
 </svg>

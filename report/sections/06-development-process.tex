@@ -2,12 +2,12 @@
 \label{sec:process}
 
 \proj{} was built incrementally, one phase at a time, with each phase shipped and
-tested before the next began. Two fixed principles governed the whole effort:
-the original PDF is \textbf{never modified}---the system is strictly a read-only
-render plus an overlay---and the headline capability, \textbf{finding text inside
-images}, had to be as close to ``100\% findable'' as possible. This section
-records how the work was planned, how it actually unfolded, and the reasoning at
-each step.
+tested before the next began. Two principles held from the start: the original
+PDF is \textbf{never modified}, and the headline capability, \textbf{finding text
+inside images}, had to be as close to ``100\% findable'' as possible. A third
+arrived late and reshaped the whole system: the user must see \textbf{nothing but
+Chrome's own viewer}. This section records how the work was planned, how it
+actually unfolded, and the reasoning at each step.
 
 \subsection{Planning: The Initial Estimate}
 Before writing code, the work was broken into seven phases with rough effort
@@ -145,6 +145,86 @@ happened.
         benefit:} dropping interception also removed the \code{declarativeNetRequest}
         and \code{storage} permissions and the catch-all content script, leaving a
         much smaller, easier-to-review permission footprint.
+  \item[Phase 13 --- Imitating the native viewer.] Even on demand, the OCR viewer
+        was still a \emph{different} viewer, so the next effort made it look and
+        behave like Chrome's: a Chrome-style toolbar with zoom and page
+        navigation, a find bar restyled after Chrome's (match counter,
+        $\uparrow/\downarrow$, Esc/Enter/Shift+Enter), Chrome's yellow and orange
+        highlights, the find bar opening already focused, and a return to the
+        native viewer at the same page via \code{\#page=N}. A new search engine
+        matched phrases across OCR word boundaries (the old one matched only
+        inside a single span), and background indexing stopped freezing in hidden
+        tabs once rendering used PDF.js's \code{print} intent, which is not paced
+        by \code{requestAnimationFrame}. \emph{Revealed:} the user's verdict was
+        that an imitation is not the original---they wanted ``same behaviour as
+        that of original \dots\ and same design and view also'', with no
+        different view and no change to the PDF's format $\rightarrow$ Phase~14.
+  \item[Phase 14 --- Native viewer only: the searchable-scan sandwich.] The
+        custom viewer was deleted outright (about 1{,}300 lines). In its place, an
+        offscreen document OCRs the PDF and uses pdf-lib to write the recognized
+        words into a \emph{copy} as invisible text (\code{3~Tr}), each word sized
+        and squeezed so Chrome's highlight covers it (Section~\ref{sec:coords});
+        the tab then switches to that copy in Chrome's own viewer. Progress moved
+        to a badge on the toolbar icon and the OCR language to the icon's
+        right-click menu. \emph{Thought:} the only way to give the user Chrome's
+        exact interface is to give Chrome a file it can search itself. This also
+        reinterpreted ``never modify the PDF'': the original is still never
+        touched, and the copy's visible content was verified identical by pixel
+        comparison (0 of 2{,}298{,}825 pixels differed). \emph{Gap:} the pipeline
+        was tested in a browser tab, but the final tab switch was not verified in
+        Chrome itself.
+  \item[Phase 15 --- First use in the user's browser.] Loading the build into the
+        user's own Chrome surfaced two problems. OCR crashed inside the offscreen
+        document in Tesseract's \emph{relaxed-SIMD} WebAssembly core: Tesseract.js
+        chooses that core when a \code{WebAssembly.validate()} probe accepts it,
+        but on this Chrome and Apple Silicon combination the probe passed and
+        execution trapped. The vendored worker was patched so the probe always
+        reports relaxed SIMD as unavailable, falling back to the mature SIMD core.
+        Separately, \code{chrome://extensions/shortcuts} showed the Mac shortcut
+        (\code{Cmd+Shift+F}) as ``Not set''; that was only explained in
+        Phase~16.
+  \item[Phase 16 --- Release hardening, verified in real Chrome.] A review before
+        publishing to the Chrome Web Store added, for the first time, an
+        automated end-to-end test that loads the \emph{packaged} extension into a
+        throwaway Chrome profile and drives it through the DevTools
+        protocol~\cite{cdp}. It found that the core feature had never worked:
+        Chrome silently refuses to navigate a website tab to an extension's
+        \code{blob:} URL, so the tab never switched to the searchable copy. Copies
+        are now served from the extension's own origin by the service worker
+        (decision~\ref{dec:serve}). The same review and tests found and fixed:
+        \begin{itemize}[nosep]
+          \item OCR collapsing into noise on sparse pages: the contrast stretch's
+                dark point fell inside the background, amplifying JPEG noise up
+                to $127\times$; the stretch gain is now capped
+                (Section~\ref{sec:impl}).
+          \item A release zip that omitted the \code{offscreen/} folder, because
+                the packaging script still listed the deleted viewer.
+          \item The Mac shortcut: Chrome leaves the suggested \code{Cmd+Shift+F}
+                unassigned (\code{chrome.commands.getAll()} reports no shortcut),
+                so the default is now Control+Shift+F, making the shortcut
+                \code{Ctrl+Shift+F} on every platform.
+          \item PDFs whose URL lacks ``.pdf'' were ignored; the extension now
+                accepts any web or file URL and checks the file's \code{\%PDF-}
+                signature.
+          \item Danish letters were stripped from word edges (``på'' was stored
+                as ``p''), because word trimming only recognized \code{a-z}; it
+                now uses Unicode letter classes.
+          \item OCR results keyed by URL could be applied to a changed file; the
+                cache now keys by a SHA-256 of the content and prunes itself
+                (decision~\ref{dec:hash}).
+          \item Silent failures: encrypted PDFs, non-PDF pages, and disabled file
+                access now show a red badge with an explanation; the success
+                badge is set only after the copy loads, because Chrome clears a
+                tab's badge when it navigates.
+          \item Unbounded resources: pdf.js documents are destroyed after each
+                job and idle OCR workers are released
+                (decision~\ref{dec:bounded}); unused Tesseract builds were
+                removed, shrinking the package from 22.5\,MB to 8.5\,MB.
+          \item Store requirements: a manifest description within 132 characters,
+                a privacy policy, and listing material.
+        \end{itemize}
+        \emph{Thought:} unit-level checks had proved the pipeline; only driving
+        the real browser proved the product.
 \end{description}
 
 \subsection{Plan versus Reality}
@@ -157,3 +237,11 @@ in \emph{any} image) is exactly the kind of goal that surfaces a long tail of
 real-world failure modes---rotation, tables, multiple languages, blur, low
 contrast, small type. Each was its own phase, and each was reached by shipping
 the previous one and watching where it still fell short.
+
+The plan was also wrong about where the project would end. It assumed a custom
+viewer throughout; in the end the custom viewer, its overlay, and its find bar
+were all deleted, and the coordinate work moved from the DOM into the PDF itself.
+The hardest late problems were not algorithms but \emph{platform behaviour}: what
+Chrome lets an extension do with its sandboxed viewer, with blob URLs, with
+keyboard shortcuts, and with toolbar badges. None of these showed up in tests of
+the pipeline alone; each surfaced only when the real browser was in the loop.

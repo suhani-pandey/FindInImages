@@ -18,48 +18,57 @@ server-side OCR service to produce a new, searchable PDF---is slow, raises
 privacy concerns, and breaks the natural in-browser reading flow.
 
 \subsection{Key Idea}
-\proj{} takes a deliberately different stance. Instead of \emph{reinventing}
-search---building an index, a query parser, and highlight logic---it
-\emph{transforms the document so the browser can search it natively}. Every page
-is rendered, any text baked into images is recovered with OCR, and the recovered
-text is injected back into the page as invisible, exactly-positioned DOM
-elements. From the browser's perspective the document now \emph{is} text, and the
-entire mature machinery of in-page search applies for free.
+\proj{} does not build a search engine. Instead, it \emph{makes the document
+itself searchable} and leaves searching to the browser. It recovers the text
+baked into images with on-device OCR and writes that text back \emph{into the
+PDF} as an invisible layer, the same ``searchable scan'' technique that document
+scanners use. Chrome's own viewer then opens the result. From the browser's
+perspective the document now \emph{contains} text, so Chrome's mature find,
+highlighting, selection, and copy machinery applies unchanged.
 
-This inversion is the conceptual core of the project: \emph{the cheapest way to
-make something searchable is to make it real text}, not to intercept and
-re-implement the act of searching.
+Two convictions shaped the project. The first is that \emph{the cheapest way to
+make something searchable is to make it real text}, rather than intercepting and
+re-implementing search. The second came from the user later in the project: the
+extension must not present a different view at all. Chrome's own viewer, toolbar
+and find bar must be the only interface, and the PDF must look exactly as it
+did. The final architecture satisfies both by changing \emph{what} Chrome
+displays (a searchable copy) rather than \emph{how} it displays it.
 
 \subsection{Contributions}
 This report documents the design and implementation of \proj{}. Its principal
 contributions are:
 
 \begin{itemize}
-  \item A fully \textbf{client-side, offline} pipeline that makes scanned PDFs
-        searchable in the browser, with no server round-trip and no data leaving
-        the user's machine.
-  \item A \textbf{coordinate-mapping engine} that aligns OCR output and native
-        PDF text across four distinct coordinate spaces, remaining correct under
-        zoom, page rotation, and high-DPI rendering
+  \item A fully \textbf{client-side, offline} pipeline that turns a scanned PDF
+        into a searchable one inside the browser, with no server round-trip and
+        no data leaving the user's machine.
+  \item A \textbf{native-viewer-only delivery model}: OCR runs in an offscreen
+        document, and the searchable copy is served from the extension's own
+        origin by its service worker, so Chrome's built-in viewer displays it
+        with the original's tab title (Section~\ref{sec:design}).
+  \item A \textbf{coordinate mapping} from OCR pixel boxes into PDF user space,
+        including rotated pages. Each invisible word is sized and horizontally
+        squeezed so that Chrome's native find highlight covers the visible word
         (Section~\ref{sec:design}).
-  \item A \textbf{performance architecture}---lazy, viewport-driven rendering
-        plus idle-time background indexing on Web Workers, with
-        resolution-independent caching in IndexedDB---that keeps the interface
-        responsive on large documents (Section~\ref{sec:impl}).
-  \item An \textbf{OCR accuracy layer}: high-resolution rendering with targeted
-        image preprocessing, plus post-processing that emits search-only
-        correction variants to raise the find hit-rate
-        (Section~\ref{sec:impl}).
+  \item An \textbf{OCR accuracy layer}: high-resolution rendering, gain-capped
+        contrast stretching, sharpening, and post-processing that corrects
+        likely digit/letter confusions (Section~\ref{sec:impl}).
+  \item \textbf{Content-addressed caching and bounded resources}: OCR results
+        keyed by a SHA-256 hash of the file, least-recently-used pruning, and
+        automatic release of OCR workers and searchable copies.
+  \item An \textbf{end-to-end test suite} that loads the packaged extension into
+        real Chrome and verifies the whole user journey
+        (Section~\ref{sec:results}).
 \end{itemize}
 
 \subsection{Report Structure}
 Section~\ref{sec:requirements} states the system's functional requirements as
 user stories. Section~\ref{sec:background} surveys the relevant background and
 prior approaches. Section~\ref{sec:tech} catalogues the technologies used and how
-they coordinate. Section~\ref{sec:design} presents the system architecture and the
-coordinate-mapping problem at its heart. Section~\ref{sec:process} recounts the
-phased development of the project and the reasoning behind each phase, and
-Section~\ref{sec:impl} details the implementation of each pipeline stage.
-Section~\ref{sec:results} evaluates the system qualitatively,
+they coordinate. Section~\ref{sec:design} presents the system architecture, the
+coordinate mapping, and the key design decisions. Section~\ref{sec:process}
+recounts the phased development of the project, including two architectural
+reversals, and Section~\ref{sec:impl} details the implementation of each pipeline
+stage. Section~\ref{sec:results} evaluates the system,
 Section~\ref{sec:limitations} discusses limitations and future work, and
 Section~\ref{sec:conclusion} concludes.

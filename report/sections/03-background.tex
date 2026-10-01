@@ -10,6 +10,18 @@ browser's find feature---sees an empty page. Making such a document searchable
 requires \emph{recovering} the text through OCR and re-associating it with the
 page.
 
+\subsection{Searchable Scans: the OCR ``Sandwich''}
+The PDF format offers a standard way to do that re-association. Text drawn with
+\emph{text rendering mode~3} (operator \code{3~Tr}) is neither filled nor
+stroked: it is invisible, yet it is still part of the page's text, so viewers can
+find, highlight, select, and copy it~\cite{pdf32000}. Document scanners and tools
+such as \code{ocrmypdf}~\cite{ocrmypdf} use this to produce \emph{searchable
+scans}: the original page image stays on top, and an invisible layer of
+recognized words sits underneath at matching positions. Because the text really
+is in the file, every PDF viewer can search it without knowing anything about
+OCR. \proj{} produces exactly this kind of file, but inside the browser and only
+when the user asks.
+
 \subsection{Optical Character Recognition}
 OCR converts images of text into character sequences. Tesseract, originally
 developed at HP and later open-sourced by Google, is among the most widely used
@@ -26,47 +38,59 @@ thresholding~\cite{otsu1979} binarize an image by analyzing its gray-level
 histogram; \proj{} performs a related percentile-based contrast stretch before
 handing the image to Tesseract's own binarizer.
 
-\subsection{In-Browser PDF Rendering with PDF.js}
-PDF.js~\cite{pdfjs} is Mozilla's standards-based PDF renderer written in
-JavaScript. It parses a PDF, exposes each page's content, and rasterizes pages
-to an HTML5 \code{<canvas>}. Crucially it also provides two capabilities this
-project depends on: \code{getTextContent()}, which returns positioned text items
-for pages that \emph{do} have a text layer, and \code{getOperatorList()}, which
-exposes the low-level drawing operators and lets us detect whether a page paints
-raster images. PDF.js also defines a \emph{viewport} abstraction that maps the
-PDF's coordinate system (points, bottom-left origin) into device pixels, which is
-the first link in our coordinate chain.
+\subsection{PDF Libraries: PDF.js and pdf-lib}
+PDF.js~\cite{pdfjs} is Mozilla's standards-based PDF parser and renderer written
+in JavaScript. \proj{} uses three of its capabilities: \code{getTextContent()},
+which returns positioned text items for pages that \emph{do} have a text layer;
+\code{getOperatorList()}, which exposes the drawing operators and reveals whether
+a page paints raster images; and \code{render()}, which rasterizes a page to a
+canvas for OCR. PDF.js also defines a \emph{viewport} that maps PDF user space
+(points, bottom-left origin) to pixels, including page rotation; its inverse is
+the bridge from OCR pixels back into the PDF.
+
+pdf-lib~\cite{pdflib} is a JavaScript library for creating and \emph{modifying}
+PDFs. It can append raw content-stream operators to an existing page and save
+the document, keeping the original content intact. \proj{} uses it to write the
+invisible text layer.
 
 \subsection{The Chrome Extension Platform (Manifest V3)}
 Manifest~V3~\cite{mv3} is the current Chrome extension architecture. The
 components relevant here are:
 \begin{itemize}
-  \item \textbf{Service worker} --- an event-driven background script (replacing
-        persistent background pages) used here to respond to the user's
-        activation gesture and switch the current tab to the custom viewer.
+  \item \textbf{Service worker} --- an event-driven background script that wakes
+        for the user's gesture, tracks progress, switches the tab, and (as an
+        ordinary service worker) can answer \code{fetch} events for the
+        extension's own URLs~\cite{swfetch}.
   \item \textbf{\code{chrome.action} and \code{chrome.commands}} --- the toolbar
-        button and a browser-global keyboard shortcut, respectively. These are the
-        two ways the user invokes the OCR viewer on a PDF; the design rationale
-        for activating \emph{on demand} (rather than auto-intercepting every PDF)
-        is discussed in Section~\ref{sec:design}.
-  \item \textbf{Web-accessible resources} and a \textbf{content security policy}
-        permitting \code{wasm-\allowbreak unsafe-\allowbreak eval}, required so the bundled
+        button (with a per-tab badge and tooltip) and a browser-global keyboard
+        shortcut. These are the two ways the user invokes the extension.
+  \item \textbf{Offscreen documents}~\cite{offscreen} --- hidden extension pages
+        with a DOM. Service workers have no canvas and cannot host the OCR
+        pipeline, so it runs in an offscreen document.
+  \item \textbf{A content security policy} permitting
+        \code{wasm-\allowbreak unsafe-\allowbreak eval}, required so the bundled
         WebAssembly OCR core can execute.
 \end{itemize}
+Chrome's built-in PDF viewer cannot be scripted or extended by extensions. Any
+approach that keeps that viewer must therefore change the \emph{file} it
+displays, not the viewer itself.
 
 \subsection{Client-Side Storage}
-Because OCR is computationally expensive, recovered text is cached in
-IndexedDB~\cite{indexeddb}, a transactional, asynchronous, origin-scoped
-key--value store suited to structured data. Caching is what turns a slow first
-read into an instant subsequent one.
+Three browser stores are used. IndexedDB~\cite{indexeddb}, a transactional
+key--value store, caches OCR results across sessions. The Cache
+Storage API~\cite{cacheapi} holds the searchable copies, as HTTP responses that the
+service worker can return directly. Extension storage (\code{chrome.storage})
+keeps the OCR language and which tabs are showing a copy. Document identities
+are SHA-256 digests computed with the Web Crypto API~\cite{webcrypto}.
 
 \subsection{Positioning Relative to Existing Approaches}
-Server-side services (e.g.\ commercial PDF tools and the open-source
-\code{ocrmypdf}) produce a new searchable PDF but require an upload and a
-round-trip, and they replace the user's in-browser reading flow. Browser-native
-PDF viewers render scanned PDFs but cannot search them. \proj{} occupies the gap
-between these: it keeps the live, in-browser experience while adding searchability
-locally and privately, and it reuses the browser's own search rather than
-shipping a new one. The trade-off is that recognition runs on the client's CPU;
-the architecture in Section~\ref{sec:design} is largely a response to making that
-trade-off acceptable.
+Server-side services (commercial PDF tools and \code{ocrmypdf} run on a server)
+produce a searchable PDF but require an upload and a round-trip, and they take
+the user out of the in-browser reading flow. Browser PDF viewers render scanned
+PDFs but cannot search them. Custom in-browser viewers can add search, but they
+replace the viewer the user knows---a cost this project first paid and later
+removed (Section~\ref{sec:process}). \proj{} combines the strengths: it produces
+a real searchable PDF like \code{ocrmypdf}, does so locally and privately, and
+shows it in the browser's own viewer. The trade-off is that recognition runs on
+the client's CPU, and the architecture in Section~\ref{sec:design} is largely a
+response to making that trade-off acceptable.

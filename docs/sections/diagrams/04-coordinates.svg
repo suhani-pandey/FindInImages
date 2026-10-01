@@ -1,30 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 180" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="11.5">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 330" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="11.5">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
   </defs>
-  <rect x="10" y="48" width="120" height="70" rx="8" fill="#faf5ff" stroke="#7c3aed"/>
-  <text x="70" y="78" text-anchor="middle" fill="#5b21b6" font-weight="600">PDF space</text>
-  <text x="70" y="94" text-anchor="middle" fill="#64748b" font-size="10">points &#183; origin (BL)</text>
-  <line x1="130" y1="83" x2="178" y2="83" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="154" y="74" text-anchor="middle" font-size="9.5" fill="#334155">viewport.transform</text>
-  <text x="154" y="100" text-anchor="middle" font-size="9.5" fill="#334155">(scale &#183; rotate)</text>
-  <rect x="180" y="48" width="120" height="70" rx="8" fill="#faf5ff" stroke="#7c3aed"/>
-  <text x="240" y="78" text-anchor="middle" fill="#5b21b6" font-weight="600">Viewport</text>
-  <text x="240" y="94" text-anchor="middle" fill="#64748b" font-size="10">CSS px &#183; origin (TL)</text>
-  <line x1="300" y1="83" x2="348" y2="83" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="324" y="74" text-anchor="middle" font-size="9.5" fill="#334155">render @ DPR</text>
-  <rect x="350" y="48" width="120" height="70" rx="8" fill="#f0fdf4" stroke="#16a34a"/>
-  <text x="410" y="78" text-anchor="middle" fill="#166534" font-weight="600">Canvas</text>
-  <text x="410" y="94" text-anchor="middle" fill="#64748b" font-size="10">device px (&#215;DPR)</text>
-  <line x1="470" y1="83" x2="518" y2="83" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="494" y="74" text-anchor="middle" font-size="9.5" fill="#334155">&#247; canvas size</text>
-  <rect x="520" y="48" width="120" height="70" rx="8" fill="#fffbeb" stroke="#d97706"/>
-  <text x="580" y="74" text-anchor="middle" fill="#92400e" font-weight="600">Normalized</text>
-  <text x="580" y="90" text-anchor="middle" fill="#64748b" font-size="10">0&#8211;1 &#183; cached</text>
-  <text x="580" y="104" text-anchor="middle" fill="#64748b" font-size="10">(scale-free)</text>
-  <line x1="640" y1="118" x2="640" y2="140" stroke="#64748b" stroke-width="1.5"/>
-  <path d="M640 140 H 360 V 132" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="500" y="155" text-anchor="middle" font-size="9.5" fill="#334155">&#215; viewport size  &#8594;  DOM overlay (CSS px, TL origin)</text>
-  <rect x="290" y="6" width="140" height="26" rx="6" fill="#eef2ff" stroke="#4338ca"/>
-  <text x="360" y="23" text-anchor="middle" fill="#3730a3" font-weight="600">Invisible span placement</text>
+  <!-- chain -->
+  <rect x="10" y="20" width="120" height="64" rx="8" fill="#f0fdfa" stroke="#0d9488"/>
+  <text x="70" y="46" text-anchor="middle" fill="#115e59" font-weight="600">OCR canvas</text>
+  <text x="70" y="63" text-anchor="middle" fill="#64748b" font-size="10">pixels · top-left origin</text>
+  <line x1="130" y1="52" x2="188" y2="52" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="159" y="44" text-anchor="middle" font-size="9.5" fill="#334155">÷ canvas</text>
+  <rect x="190" y="20" width="120" height="64" rx="8" fill="#fffbeb" stroke="#d97706"/>
+  <text x="250" y="46" text-anchor="middle" fill="#92400e" font-weight="600">Normalized</text>
+  <text x="250" y="63" text-anchor="middle" fill="#64748b" font-size="10">0–1 · cached</text>
+  <line x1="310" y1="52" x2="368" y2="52" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="339" y="44" text-anchor="middle" font-size="9.5" fill="#334155">× page</text>
+  <rect x="370" y="20" width="120" height="64" rx="8" fill="#faf5ff" stroke="#7c3aed"/>
+  <text x="430" y="46" text-anchor="middle" fill="#5b21b6" font-weight="600">Visual page</text>
+  <text x="430" y="63" text-anchor="middle" fill="#64748b" font-size="10">viewport · rotated</text>
+  <line x1="490" y1="52" x2="588" y2="52" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="539" y="44" text-anchor="middle" font-size="9.5" fill="#334155">convertToPdfPoint</text>
+  <text x="539" y="66" text-anchor="middle" font-size="9.5" fill="#334155">(inverse viewport)</text>
+  <rect x="590" y="20" width="140" height="64" rx="8" fill="#eef2ff" stroke="#4338ca"/>
+  <text x="660" y="46" text-anchor="middle" fill="#3730a3" font-weight="600">PDF user space</text>
+  <text x="660" y="63" text-anchor="middle" fill="#64748b" font-size="10">points · bottom-left origin</text>
+  <!-- word illustration -->
+  <text x="20" y="122" fill="#0f172a" font-weight="600">One recognized word → one invisible text object</text>
+  <rect x="40" y="140" width="260" height="90" fill="#f8fafc" stroke="#94a3b8" stroke-dasharray="4 3"/>
+  <text x="170" y="210" text-anchor="middle" font-size="44" font-family="Georgia,serif" fill="#cbd5e1">Invoice</text>
+  <line x1="40" y1="212" x2="300" y2="212" stroke="#16a34a" stroke-width="1.6"/>
+  <circle cx="40" cy="212" r="4" fill="#16a34a"/><text x="40" y="230" text-anchor="middle" fill="#166534" font-size="10.5">S</text>
+  <circle cx="300" cy="212" r="4" fill="#16a34a"/><text x="300" y="230" text-anchor="middle" fill="#166534" font-size="10.5">E</text>
+  <text x="170" y="250" text-anchor="middle" fill="#166534" font-size="10.5">baseline at 80 % of the box height</text>
+  <line x1="40" y1="268" x2="300" y2="268" stroke="#64748b" stroke-width="1.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="170" y="284" text-anchor="middle" fill="#334155" font-size="10.5">w = |E − S|  →  horizontal squeeze Tz</text>
+  <line x1="320" y1="140" x2="320" y2="230" stroke="#64748b" stroke-width="1.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="330" y="182" fill="#334155" font-size="10.5">h = box height</text>
+  <text x="330" y="197" fill="#334155" font-size="10.5">→ font size</text>
+  <!-- operators -->
+  <rect x="440" y="140" width="290" height="150" rx="8" fill="#f8fafc" stroke="#475569"/>
+  <g font-family="SF Mono,Menlo,Consolas,monospace" font-size="11" fill="#0f172a">
+    <text x="456" y="164">q  BT</text>
+    <text x="456" y="184">3 Tr</text><text x="592" y="184" fill="#64748b">% invisible</text>
+    <text x="456" y="204">/F h Tf</text><text x="592" y="204" fill="#64748b">% size = h</text>
+    <text x="456" y="224">s Tz</text><text x="592" y="224" fill="#64748b">% s = 100·w/w_nat</text>
+    <text x="456" y="244">cos sin -sin cos Sx Sy Tm</text>
+    <text x="456" y="264">(Invoice) Tj</text>
+    <text x="456" y="282">ET  Q</text>
+  </g>
+  <text x="370" y="320" text-anchor="middle" fill="#64748b" font-size="10.5">Chrome draws its find highlight from this geometry, so it lands exactly on the visible word — at any zoom and on rotated pages.</text>
 </svg>

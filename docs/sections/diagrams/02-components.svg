@@ -1,35 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 470" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="12.5">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" font-family="-apple-system,Segoe UI,Arial,sans-serif" font-size="12.5">
   <defs>
     <marker id="arrowg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
   </defs>
-  <rect x="8" y="8" width="704" height="86" rx="10" fill="#eff6ff" stroke="#bfdbfe"/>
-  <text x="20" y="27" fill="#1e3a8a" font-weight="700" font-size="12">EXTENSION RUNTIME (Manifest V3)</text>
-  <rect x="24" y="36" width="180" height="46" rx="7" fill="#fff" stroke="#2563eb"/><text x="114" y="63" text-anchor="middle">manifest.json</text>
-  <rect x="222" y="36" width="240" height="46" rx="7" fill="#fff" stroke="#2563eb"/><text x="342" y="58" text-anchor="middle">service-worker.js</text><text x="342" y="73" text-anchor="middle" fill="#64748b" font-size="10.5">DNR redirect rule</text>
-  <rect x="480" y="36" width="216" height="46" rx="7" fill="#fff" stroke="#2563eb"/><text x="588" y="58" text-anchor="middle">content.js</text><text x="588" y="73" text-anchor="middle" fill="#64748b" font-size="10.5">stub (future phase)</text>
-  <rect x="8" y="104" width="704" height="120" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="20" y="123" fill="#0f172a" font-weight="700" font-size="12">CUSTOM VIEWER (the application)</text>
-  <rect x="24" y="132" width="150" height="40" rx="7" fill="#fff" stroke="#475569"/><text x="99" y="156" text-anchor="middle">viewer.html</text>
-  <rect x="190" y="132" width="300" height="80" rx="7" fill="#fff" stroke="#475569" stroke-width="1.6"/><text x="340" y="152" text-anchor="middle" font-weight="700">viewer.js — orchestrator</text>
-  <text x="340" y="170" text-anchor="middle" fill="#64748b" font-size="10.5">load &#183; render &#183; detect &#183; OCR &#183; cache &#183; find</text>
-  <rect x="206" y="178" width="86" height="26" rx="6" fill="#f0fdf4" stroke="#16a34a"/><text x="249" y="195" text-anchor="middle" font-size="10.5">text-layer.js</text>
-  <rect x="298" y="178" width="86" height="26" rx="6" fill="#fffbeb" stroke="#d97706"/><text x="341" y="195" text-anchor="middle" font-size="10.5">cache.js</text>
-  <rect x="390" y="178" width="86" height="26" rx="6" fill="#f0fdfa" stroke="#0d9488"/><text x="433" y="192" text-anchor="middle" font-size="9.5">ocr-postprocess</text>
-  <rect x="506" y="132" width="190" height="40" rx="7" fill="#fff" stroke="#475569"/><text x="601" y="151" text-anchor="middle" font-size="11">find bar (Ctrl+F UI)</text><text x="601" y="165" text-anchor="middle" fill="#64748b" font-size="10">highlights &#183; navigation</text>
-  <rect x="8" y="234" width="704" height="86" rx="10" fill="#faf5ff" stroke="#e9d5ff"/>
-  <text x="20" y="253" fill="#5b21b6" font-weight="700" font-size="12">VENDORED LIBRARIES (bundled, offline)</text>
-  <rect x="24" y="262" width="320" height="46" rx="7" fill="#fff" stroke="#7c3aed"/><text x="184" y="284" text-anchor="middle">PDF.js</text><text x="184" y="299" text-anchor="middle" fill="#64748b" font-size="10.5">pdf.min.mjs + pdf.worker.min.mjs</text>
-  <rect x="360" y="262" width="336" height="46" rx="7" fill="#fff" stroke="#0d9488"/><text x="528" y="284" text-anchor="middle">Tesseract.js</text><text x="528" y="299" text-anchor="middle" fill="#64748b" font-size="10.5">worker.min.js + core WASM + eng/dan traineddata</text>
-  <rect x="8" y="330" width="704" height="78" rx="10" fill="#f1f5f9" stroke="#e2e8f0"/>
-  <text x="20" y="349" fill="#334155" font-weight="700" font-size="12">BROWSER PLATFORM APIs</text>
-  <rect x="24" y="358" width="124" height="40" rx="7" fill="#fff" stroke="#94a3b8"/><text x="86" y="382" text-anchor="middle" font-size="11">Canvas 2D</text>
-  <rect x="160" y="358" width="150" height="40" rx="7" fill="#fff" stroke="#94a3b8"/><text x="235" y="382" text-anchor="middle" font-size="11">IntersectionObserver</text>
-  <rect x="322" y="358" width="150" height="40" rx="7" fill="#fff" stroke="#94a3b8"/><text x="397" y="382" text-anchor="middle" font-size="11">requestIdleCallback</text>
-  <rect x="484" y="358" width="100" height="40" rx="7" fill="#fff" stroke="#94a3b8"/><text x="534" y="382" text-anchor="middle" font-size="11">IndexedDB</text>
-  <rect x="596" y="358" width="100" height="40" rx="7" fill="#fff" stroke="#94a3b8"/><text x="646" y="382" text-anchor="middle" font-size="11">Web Workers</text>
-  <line x1="340" y1="212" x2="240" y2="262" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
-  <line x1="360" y1="212" x2="500" y2="262" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
-  <line x1="341" y1="204" x2="520" y2="358" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
-  <line x1="528" y1="308" x2="630" y2="358" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
-  <text x="360" y="432" text-anchor="middle" fill="#64748b" font-size="10.5">arrows show principal dependencies (viewer.js coordinates the libraries; modules use platform APIs)</text>
+  <!-- Chrome -->
+  <rect x="8" y="8" width="704" height="72" rx="10" fill="#eef2ff" stroke="#c7d2fe"/>
+  <text x="20" y="27" fill="#3730a3" font-weight="700" font-size="12">CHROME (unchanged — the only user interface)</text>
+  <rect x="24" y="36" width="330" height="34" rx="7" fill="#fff" stroke="#4338ca"/><text x="189" y="58" text-anchor="middle">Native PDF viewer · native Ctrl+F · print · download</text>
+  <rect x="370" y="36" width="326" height="34" rx="7" fill="#fff" stroke="#4338ca"/><text x="533" y="58" text-anchor="middle">Toolbar icon + badge · Ctrl+Shift+F shortcut</text>
+  <!-- Extension runtime -->
+  <rect x="8" y="90" width="704" height="86" rx="10" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="20" y="109" fill="#1e3a8a" font-weight="700" font-size="12">EXTENSION RUNTIME (Manifest V3)</text>
+  <rect x="24" y="118" width="170" height="46" rx="7" fill="#fff" stroke="#2563eb"/><text x="109" y="140" text-anchor="middle">manifest.json</text><text x="109" y="155" text-anchor="middle" fill="#64748b" font-size="10.5">permissions · CSP · shortcut</text>
+  <rect x="210" y="118" width="486" height="46" rx="7" fill="#fff" stroke="#2563eb" stroke-width="1.6"/><text x="453" y="140" text-anchor="middle" font-weight="700">service-worker.js</text><text x="453" y="155" text-anchor="middle" fill="#64748b" font-size="10.5">trigger · badge progress/errors · tab switch · fetch handler serves copies · cleanup</text>
+  <!-- Offscreen document -->
+  <rect x="8" y="186" width="704" height="130" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="20" y="205" fill="#0f172a" font-weight="700" font-size="12">OFFSCREEN DOCUMENT (hidden; reason WORKERS)</text>
+  <rect x="24" y="214" width="170" height="44" rx="7" fill="#fff" stroke="#475569"/><text x="109" y="235" text-anchor="middle">offscreen.js</text><text x="109" y="250" text-anchor="middle" fill="#64748b" font-size="10">job queue · idle worker release</text>
+  <rect x="210" y="214" width="486" height="44" rx="7" fill="#fff" stroke="#475569" stroke-width="1.6"/><text x="453" y="235" text-anchor="middle" font-weight="700">processor.js — the pipeline</text><text x="453" y="250" text-anchor="middle" fill="#64748b" font-size="10.5">download · detect · OCR · map to PDF space · de-duplicate · embed · save</text>
+  <rect x="24" y="268" width="160" height="36" rx="6" fill="#f0fdfa" stroke="#0d9488"/><text x="104" y="285" text-anchor="middle" font-size="11">ocr.js</text><text x="104" y="298" text-anchor="middle" font-size="9.5" fill="#64748b">render · preprocess · pool</text>
+  <rect x="196" y="268" width="160" height="36" rx="6" fill="#f0fdfa" stroke="#0d9488"/><text x="276" y="285" text-anchor="middle" font-size="11">ocr-postprocess.js</text><text x="276" y="298" text-anchor="middle" font-size="9.5" fill="#64748b">clean-up · corrections</text>
+  <rect x="368" y="268" width="156" height="36" rx="6" fill="#fffbeb" stroke="#d97706"/><text x="446" y="285" text-anchor="middle" font-size="11">cache.js</text><text x="446" y="298" text-anchor="middle" font-size="9.5" fill="#64748b">hash-keyed · LRU</text>
+  <rect x="536" y="268" width="160" height="36" rx="6" fill="#f0fdf4" stroke="#16a34a"/><text x="616" y="285" text-anchor="middle" font-size="11">embed.js</text><text x="616" y="298" text-anchor="middle" font-size="9.5" fill="#64748b">invisible text (3 Tr, Tz)</text>
+  <!-- Vendored libraries -->
+  <rect x="8" y="326" width="704" height="80" rx="10" fill="#faf5ff" stroke="#e9d5ff"/>
+  <text x="20" y="345" fill="#5b21b6" font-weight="700" font-size="12">VENDORED LIBRARIES (bundled, offline)</text>
+  <rect x="24" y="354" width="210" height="42" rx="7" fill="#fff" stroke="#7c3aed"/><text x="129" y="372" text-anchor="middle">PDF.js</text><text x="129" y="387" text-anchor="middle" fill="#64748b" font-size="10">analyse + render for OCR</text>
+  <rect x="250" y="354" width="240" height="42" rx="7" fill="#fff" stroke="#0d9488"/><text x="370" y="372" text-anchor="middle">Tesseract.js</text><text x="370" y="387" text-anchor="middle" fill="#64748b" font-size="10">SIMD/LSTM WASM core · eng + dan data</text>
+  <rect x="506" y="354" width="190" height="42" rx="7" fill="#fff" stroke="#16a34a"/><text x="601" y="372" text-anchor="middle">pdf-lib</text><text x="601" y="387" text-anchor="middle" fill="#64748b" font-size="10">write + save the copy</text>
+  <!-- Platform -->
+  <rect x="8" y="416" width="704" height="78" rx="10" fill="#f1f5f9" stroke="#e2e8f0"/>
+  <text x="20" y="435" fill="#334155" font-weight="700" font-size="12">BROWSER PLATFORM APIs</text>
+  <rect x="24" y="444" width="100" height="38" rx="7" fill="#fff" stroke="#94a3b8"/><text x="74" y="467" text-anchor="middle" font-size="11">Canvas 2D</text>
+  <rect x="136" y="444" width="104" height="38" rx="7" fill="#fff" stroke="#94a3b8"/><text x="188" y="467" text-anchor="middle" font-size="11">Web Workers</text>
+  <rect x="252" y="444" width="104" height="38" rx="7" fill="#fff" stroke="#94a3b8"/><text x="304" y="467" text-anchor="middle" font-size="11">IndexedDB</text>
+  <rect x="368" y="444" width="96" height="38" rx="7" fill="#fff" stroke="#94a3b8"/><text x="416" y="467" text-anchor="middle" font-size="11">Web Crypto</text>
+  <rect x="476" y="444" width="110" height="38" rx="7" fill="#fff" stroke="#94a3b8"/><text x="531" y="467" text-anchor="middle" font-size="11">chrome.storage</text>
+  <rect x="598" y="444" width="98" height="38" rx="7" fill="#fff" stroke="#94a3b8"/><text x="647" y="467" text-anchor="middle" font-size="11">Cache Storage</text>
+  <!-- dependencies -->
+  <line x1="533" y1="70" x2="533" y2="116" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
+  <line x1="453" y1="164" x2="453" y2="212" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
+  <line x1="104" y1="304" x2="120" y2="352" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
+  <line x1="150" y1="304" x2="300" y2="352" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
+  <line x1="616" y1="304" x2="606" y2="352" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
+  <path d="M446 304 V 316 H 498 V 430 H 304 V 442" fill="none" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowg)"/>
+  <path d="M696 141 H 705 V 430 H 647 V 442" fill="none" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#arrowg)"/>
+  <text x="360" y="518" text-anchor="middle" fill="#64748b" font-size="10.5">arrows show principal dependencies; dashed: the service worker serves copies straight from Cache Storage</text>
+  <text x="360" y="536" text-anchor="middle" fill="#64748b" font-size="10.5">no content scripts and no page overlays — the extension never touches web pages</text>
 </svg>
