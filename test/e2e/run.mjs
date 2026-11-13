@@ -213,7 +213,8 @@ try {
   {
     const cmds = await evalSW(`return await chrome.commands.getAll();`);
     const cmd = cmds.find((c) => c.name === "toggle-search");
-    check("keyboard shortcut is assigned", !!(cmd && cmd.shortcut), cmd ? `"${cmd.shortcut}"` : J(cmds));
+    shortcut = (cmd && cmd.shortcut) || "";
+    check("keyboard shortcut is assigned", !!shortcut, cmd ? `"${shortcut}"` : J(cmds));
   }
 
   // Non-PDF page → clear error, no swap
@@ -223,11 +224,15 @@ try {
     const r = await waitResult(id, 20000);
     check("non-PDF page reports an error", !!r.error && /isn't a PDF/.test(r.error), r.error);
   }
+  let shortcut = "";
 
   // Scanned PDF → OCR, swap in the native viewer, searchable, same tab title
   let firstOcrMs;
   {
     const id = await openTab(`${BASE}/a.pdf`);
+  // Tooltips name this platform's keys: Chrome's find is ⌘F on Mac, where
+  // Ctrl+F does nothing.
+  const findKey = process.platform === "darwin" ? "⌘F" : "Ctrl+F";
     const before = await tab(id);
     await trigger(id);
     const r = await waitResult(id);
@@ -256,6 +261,8 @@ try {
   }
 
   // PDF URL without ".pdf" → processed; same bytes reuse the content-hash OCR cache
+      check("…and names this platform's find key and the shortcut",
+        b.title.includes(`Press ${findKey} to search`) && b.title.includes(`${shortcut} or click this icon`), b.title);
   {
     const id = await openTab(`${BASE}/files/Quarterly%20Report`);
     const before = await tab(id);

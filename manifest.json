@@ -26,7 +26,7 @@
   },
 
   "action": {
-    "default_title": "Search this PDF with OCR (Ctrl+Shift+F)",
+    "default_title": "Search this PDF with OCR",
     "default_icon": {
       "16":  "icons/icon16.png",
       "48":  "icons/icon48.png",

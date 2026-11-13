@@ -4,7 +4,7 @@
   "description": "Chrome extension that makes scanned PDFs searchable with Chrome's native Ctrl+F by embedding an invisible OCR text layer.",
   "main": "service-worker.js",
   "scripts": {
-    "package": "mkdir -p dist && rm -f dist/find-in-images-$(node -p \"require('./manifest.json').version\").zip && zip -r dist/find-in-images-$(node -p \"require('./manifest.json').version\").zip manifest.json service-worker.js icons/ lib/ offscreen/ --exclude '*.DS_Store'",
+    "package": "mkdir -p dist && rm -f dist/find-in-images-$(node -p \"require('./manifest.json').version\").zip && zip -r dist/find-in-images-$(node -p \"require('./manifest.json').version\").zip manifest.json service-worker.js THIRD_PARTY_LICENSES.txt icons/ lib/ offscreen/ --exclude '*.DS_Store'",
     "test:e2e": "node test/e2e/run.mjs"
   },
   "repository": {

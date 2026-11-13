@@ -13,7 +13,7 @@ Everything runs on your computer. Nothing is uploaded anywhere.
 1. Open a PDF in Chrome (any site, or a local file).
 2. Press **Ctrl+Shift+F** (on Mac: **Control**+Shift+F, ⌃⇧F), or click the toolbar icon.
 3. Watch the badge on the icon: `…` → `42%` → `✓`. The tab then shows the searchable copy.
-4. Press **Ctrl+F** and search as usual.
+4. Press **Ctrl+F** (**⌘F** on Mac) and search as usual: it's Chrome's own search bar, which can now find the words.
 5. Press **Ctrl+Shift+F** again to switch back to the original.
 
 The OCR language (English, Danish, or both) is set by right-clicking the toolbar icon and choosing **OCR language**.
@@ -95,6 +95,8 @@ To try it by hand: `chrome://extensions` → enable **Developer mode** → **Loa
 
 No data leaves your computer. See the [privacy policy](https://suhani-pandey.github.io/FindInImages/privacy.html).
 
-## Acknowledgements
+## Acknowledgements and licenses
 
-[PDF.js](https://mozilla.github.io/pdf.js/) · [Tesseract.js](https://tesseract.projectnaptha.com/) · [pdf-lib](https://pdf-lib.js.org/)
+Built on [PDF.js](https://mozilla.github.io/pdf.js/) (Apache-2.0), [Tesseract.js](https://tesseract.projectnaptha.com/) and the Tesseract OCR engine (Apache-2.0), and [pdf-lib](https://pdf-lib.js.org/) (MIT). The OCR engine also includes Leptonica, libjpeg, libpng, libtiff, libwebp, giflib, zlib and OpenLibm. Every bundled component and its full license text is listed in [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt), which ships inside the extension package. `lib/tesseract/worker.min.js` is modified, as described there.
+
+This software is based in part on the work of the Independent JPEG Group.

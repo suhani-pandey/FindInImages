@@ -77,7 +77,10 @@ async function serveCopy(url) {
 }
 
 // Copies only live for one browser session.
-chrome.runtime.onStartup.addListener(() => caches.delete(COPY_CACHE));
+chrome.runtime.onStartup.addListener(() => {
+  caches.delete(COPY_CACHE);
+  setDefaultTitle();
+});
 
 const LANGS = [
   ["eng", "English"],
@@ -136,8 +139,32 @@ async function ensureOffscreen() {
   }
 }
 
+// ── Shortcut names for tooltips ──────────────────────────────────────────────
+// Named the way this user's Chrome shows them: the toggle shortcut actually
+// assigned (users can change it, or it may be unset) and the platform's find
+// key — ⌘F on Mac, where Ctrl+F does nothing in Chrome.
+async function keyNames() {
+  const [platform, commands] = await Promise.all([
+    chrome.runtime.getPlatformInfo(),
+    chrome.commands.getAll(),
+  ]);
+  const cmd = commands.find((c) => c.name === "toggle-search");
+  return { find: platform.os === "mac" ? "⌘F" : "Ctrl+F", toggle: (cmd && cmd.shortcut) || "" };
+}
+
+async function idleTitle() {
+  const { toggle } = await keyNames();
+  return toggle ? `Search this PDF with OCR (${toggle})` : "Search this PDF with OCR";
+}
+
+// The manifest's default tooltip can't know the platform or a customized
+// shortcut, so replace it whenever the worker starts with a new browser
+// session or install.
+async function setDefaultTitle() {
+  chrome.action.setTitle({ title: await idleTitle() }).catch(() => {});
+}
+
 // ── Badge helpers (per-tab progress on the toolbar icon) ─────────────────────
-const IDLE_TITLE = "Search this PDF with OCR (Ctrl+Shift+F)";
 const BLUE = "#1a73e8";
 const RED = "#d93025";
 
@@ -155,8 +182,9 @@ function badge(tabId, text, title, color = BLUE) {
 function badgeFlash(tabId, text, title, ms = 4000, color = BLUE) {
   badge(tabId, text, title, color);
   const gen = badgeGen.get(tabId);
-  setTimeout(() => {
-    if (badgeGen.get(tabId) === gen) badge(tabId, "", IDLE_TITLE);
+  setTimeout(async () => {
+    const title = await idleTitle();
+    if (badgeGen.get(tabId) === gen) badge(tabId, "", title);
   }, ms);
 }
 
@@ -246,9 +274,10 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 async function finishJob({ tabId, url, copyUrl, words }) {
+  const { find, toggle } = await keyNames();
   if (!copyUrl) {
-    // Every page already had real text — native Ctrl+F works as-is.
-    badgeFlash(tabId, "✓", "This PDF is already searchable — just press Ctrl+F");
+    // Every page already had real text — native find works as-is.
+    badgeFlash(tabId, "✓", `This PDF is already searchable — just press ${find}`);
     return;
   }
 
@@ -270,7 +299,8 @@ async function finishJob({ tabId, url, copyUrl, words }) {
   // Chrome clears a tab's badge when it navigates, so flash the result only
   // once the copy has loaded.
   await navigateAndWait(tabId, copyUrl);
-  badgeFlash(tabId, "✓", `Searchable — ${words} words added. Press Ctrl+F to search, Ctrl+Shift+F to restore.`, 6000);
+  const restore = toggle ? `${toggle} or click this icon` : "click this icon";
+  badgeFlash(tabId, "✓", `Searchable — ${words} words added. Press ${find} to search; ${restore} to restore the original.`, 6000);
 }
 
 function navigateAndWait(tabId, url, timeoutMs = 15000) {
@@ -317,6 +347,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 // ── OCR language: radio menu on the toolbar icon's right-click menu ──────────
 chrome.runtime.onInstalled.addListener(async () => {
   caches.delete(COPY_CACHE); // drop copies left over from a previous version
+  setDefaultTitle();
   const lang = await getLang();
   chrome.contextMenus.create({ id: "fii-lang", title: "OCR language", contexts: ["action"] });
   for (const [value, label] of LANGS) {

@@ -8,7 +8,7 @@ Everything to paste into the [Developer Dashboard](https://chrome.google.com/web
 - [ ] Push to `main` so GitHub Pages publishes the privacy policy and the sample PDF, then check that both URLs below open.
 - [ ] `npm run test:e2e` passes.
 - [ ] `npm run package` → upload `dist/find-in-images-<version>.zip`.
-- [ ] Try the packaged build by hand once: unzip it, **Load unpacked**, open the sample PDF, press Ctrl+Shift+F (⌃⇧F on Mac), then Ctrl+F for "lighthouse". Check `chrome://extensions/shortcuts` shows the shortcut as set.
+- [ ] Try the packaged build by hand once: unzip it, **Load unpacked**, open the sample PDF, press Ctrl+Shift+F (⌃⇧F on Mac), then Ctrl+F (⌘F on Mac) for "lighthouse". Check `chrome://extensions/shortcuts` shows the shortcut as set.
 - [ ] Take screenshots (below).
 
 ## Store listing tab
@@ -28,7 +28,7 @@ Everything to paste into the [Developer Dashboard](https://chrome.google.com/web
 > HOW TO USE
 > 1. Open a scanned PDF in Chrome.
 > 2. Press Ctrl+Shift+F (Control+Shift+F on Mac too) or click the toolbar icon.
-> 3. When the badge shows ✓, press Ctrl+F and search as usual.
+> 3. When the badge shows ✓, press Ctrl+F (⌘F on Mac) and search as usual.
 > Press Ctrl+Shift+F again to switch back to the original.
 >
 > WHAT IT DOES
@@ -89,4 +89,4 @@ Everything to paste into the [Developer Dashboard](https://chrome.google.com/web
 
 ## Notes for the reviewer (optional field)
 
-> To test: open https://suhani-pandey.github.io/FindInImages/sample-scan.pdf (an image-only scan), press Ctrl+Shift+F (Control+Shift+F on Mac, ⌃⇧F) or click the toolbar icon, wait for the ✓ badge, then press Ctrl+F and search for "lighthouse". Press Ctrl+Shift+F again to return to the original.
+> To test: open https://suhani-pandey.github.io/FindInImages/sample-scan.pdf (an image-only scan), press Ctrl+Shift+F (Control+Shift+F on Mac, ⌃⇧F) or click the toolbar icon, wait for the ✓ badge, then press Ctrl+F (⌘F on Mac) and search for "lighthouse". Press Ctrl+Shift+F again to return to the original.
