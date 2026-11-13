@@ -32,10 +32,16 @@ Ctrl+Shift+F on a PDF tab
 Service worker ──► offscreen document
                      1. download the PDF (with the user's cookies)
                      2. pdf.js: which pages paint images / have no text?
-                     3. render those pages at ~3000 px, clean up contrast
-                     4. Tesseract.js OCR → words + bounding boxes
-                     5. pdf-lib: write each word into the page as INVISIBLE
-                        text (render mode 3), sized to cover the visible word
+                     3. render those pages at ~3000 px; fix contrast,
+                        sharpen, erase table borders
+                     4. Tesseract.js OCR in three passes → words + lines:
+                        · the whole page
+                        · coloured/dark areas (white text on tiles,
+                          buttons) re-rendered at up to 3x and read alone
+                        · the page turned sideways (vertical axis labels)
+                     5. pdf-lib: write each OCR line into the page as
+                        INVISIBLE text (render mode 3), every word sized to
+                        cover the visible one, real spaces between words
                      6. store the copy in Cache Storage
    ↓
 tab → chrome-extension://…/searchable/<id>/<file name>?src=<original URL>
@@ -79,7 +85,7 @@ npm run test:e2e     # packages, loads the zip into a throwaway Chrome profile, 
 
 To try it by hand: `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select this folder.
 
-`test:e2e` drives real Chrome through the DevTools protocol. It covers the scanned-PDF swap, tab title, reload, restore, URLs without `.pdf`, sign-in cookies, changed files, encrypted PDFs, local files, copy cleanup and OCR after worker release. Set `CHROME=/path/to/chrome` if Chrome isn't in the default location, or `HEADFUL=1` to watch.
+`test:e2e` drives real Chrome through the DevTools protocol. It covers the scanned-PDF swap, tab title, reload, restore, URLs without `.pdf`, sign-in cookies, changed files, encrypted PDFs, local files, copy cleanup and OCR after worker release. It also checks reading accuracy on hard cases: a word repeated 17 times in tables, buttons, small print and italics; a screenshot with a white-on-dark button; and a lecture-style slide with white text on coloured tiles and a sideways axis title. Set `CHROME=/path/to/chrome` if Chrome isn't in the default location, or `HEADFUL=1` to watch.
 
 ---
 
@@ -94,6 +100,10 @@ To try it by hand: `chrome://extensions` → enable **Developer mode** → **Loa
 ## Privacy
 
 No data leaves your computer. See the [privacy policy](https://suhani-pandey.github.io/FindInImages/privacy.html).
+
+## License
+
+Find in Images is released under the [MIT License](LICENSE). The bundled third-party libraries keep their own licenses (see below).
 
 ## Acknowledgements and licenses
 

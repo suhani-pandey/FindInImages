@@ -7,8 +7,8 @@
  * Both the raw and corrected spans get injected, so the user finds the word
  * whether they type the real spelling or the OCR'd one.
  *
- * Input  words: [{ text, bbox, confidence }]   (confidence 0..100, optional)
- * Output words: [{ text, bbox }]               (filtered, trimmed, +variants)
+ * Input  words: [{ text, bbox, confidence, line }]   (confidence 0..100, optional)
+ * Output words: [{ text, bbox, line }]               (filtered, trimmed, +variants)
  */
 
 // Minimum OCR confidence to keep a word. Findability is the priority here, so we
@@ -35,22 +35,34 @@ export function postProcessWords(words, { minConfidence = DEFAULT_MIN_CONFIDENCE
     // 1. Drop low-confidence noise
     if (typeof w.confidence === "number" && w.confidence < minConfidence) continue;
 
-    // 2. Trim leading/trailing non-alphanumeric junk
-    const text = trimNoise(w.text);
+    // 2. Trim leading/trailing non-alphanumeric junk (after restoring CO₂ & co,
+    //    whose misread subscript would otherwise be trimmed away)
+    const text = trimNoise(fixSubscripts(w.text));
     if (!text) continue;
 
     // 3. Keep the raw (trimmed) word — this is the selectable/copyable one
-    out.push({ text, bbox: w.bbox });
+    out.push({ text, bbox: w.bbox, line: w.line });
 
     // 4. Add a digit→letter corrected variant for likely-misread words.
     //    Marked variant:true so it's search-only (not selectable/copyable).
     const variant = correctionVariant(text);
     if (variant && variant !== text) {
-      out.push({ text: variant, bbox: w.bbox, variant: true });
+      out.push({ text: variant, bbox: w.bbox, line: w.line, variant: true });
     }
   }
 
   return out;
+}
+
+// Tesseract reads the small subscript ₂ of CO₂ and SO₂ as a colon or a "z"
+// ("CO:", "CO:z", "CO:'s", "SOz/year") or the O as a zero ("C02"), at any
+// resolution, so a search for "CO2" — everywhere in climate and chemistry
+// material — found nothing. Restore the plain-text spelling of these two.
+const SUBSCRIPT_FORMULA = /^([CS])[O0](?::[2₂zZ]?|[2₂zZ])(['’]s|\/\p{L}+)?[^\p{L}\p{N}]*$/u;
+
+function fixSubscripts(s) {
+  const m = s.match(SUBSCRIPT_FORMULA);
+  return m ? `${m[1]}O2${m[2] || ""}` : s;
 }
 
 // Strip characters that aren't letters/digits from both ends of the token.
@@ -60,14 +72,14 @@ function trimNoise(s) {
 }
 
 /**
- * For a token that contains both letters and digits and is *mostly* letters,
- * assume the digits are misread letters and map them back (e.g. "he11o"→"hello",
- * "ca5h"→"cash"). Returns null when no correction applies.
+ * For a word whose digits all sit BETWEEN letters, assume the digits are
+ * misread letters and map them back (e.g. "he11o"→"hello", "ca5h"→"cash").
+ * Digits at either end of a word are usually real — "CO2", "A4", "MP3",
+ * "COVID19", "2nd" — and must not become "COz" (the corrected form is the one
+ * embedded), so they're left alone. Returns null when no correction applies.
  */
 function correctionVariant(text) {
-  const hasLetter = /\p{L}/u.test(text);
-  const hasDigit  = /[0-9]/.test(text);
-  if (!hasLetter || !hasDigit) return null;
+  if (!/^\p{L}+(?:[0-9]+\p{L}+)+$/u.test(text)) return null;
 
   // Skip tokens that are mostly digits — likely a genuine number/code
   const digitCount = (text.match(/[0-9]/g) || []).length;

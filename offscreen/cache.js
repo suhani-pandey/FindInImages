@@ -11,7 +11,9 @@
  * link), and stale word positions must never be embedded into the new file.
  *
  * Record shape (keyed by `${docId}::${pageNum}`):
- *   { words: [{ text, bbox: {x0,y0,x1,y1} }],  // bbox values in 0..1
+ *   { words: [{ text, variant?, line, bbox: {x0,y0,x1,y1} }],  // all coords 0..1
+ *     lines: [{ bbox, baseline: {x0,y0,x1,y1} | null, dir? }], // words[i].line indexes this;
+ *                                                              // dir 1 = read from the page turned a quarter clockwise
  *     ts: <epoch ms, last use>, v: <format version> }
  */
 
@@ -26,7 +28,11 @@ const STORE      = "ocr-pages";
 // v4: stronger preprocessing — percentile contrast stretch + unsharp mask.
 // v5: contrast-stretch gain capped (sparse pages were amplified into noise).
 // v6: word trimming keeps non-ASCII letters (Danish "på" was stored as "p").
-const FORMAT_VER = 6;
+// v7: OCR lines stored (text is written line by line); thin table lines are
+//     removed before OCR; dark areas get a second, inverted OCR pass.
+// v8: coloured areas re-read at up to 3x resolution; sideways pass for
+//     vertical text; CO₂/SO₂ restored; digit fixes only inside words.
+const FORMAT_VER = 8;
 
 // A page record is roughly 10–40 KB, so this caps the cache at tens of MB.
 const MAX_PAGES = 2000;
@@ -65,8 +71,9 @@ export async function hashBytes(bytes) {
 }
 
 /**
- * Return cached normalized words for a page, or null on miss/error. A hit
- * refreshes the record's timestamp so frequently used documents survive pruning.
+ * Return a page's cached OCR result { words, lines } (normalized coordinates),
+ * or null on miss/error. A hit refreshes the record's timestamp so frequently
+ * used documents survive pruning.
  */
 export async function getCachedPage(docId, pageNum) {
   try {
@@ -79,7 +86,7 @@ export async function getCachedPage(docId, pageNum) {
         const rec = req.result;
         if (!rec || rec.v !== FORMAT_VER) return resolve(null);
         store.put({ ...rec, ts: Date.now() }, key);
-        resolve(rec.words);
+        resolve({ words: rec.words, lines: rec.lines || [] });
       };
       req.onerror = () => reject(req.error);
     });
@@ -90,15 +97,15 @@ export async function getCachedPage(docId, pageNum) {
 }
 
 /**
- * Store normalized words for a page. Empty arrays are cached too, so pages with
- * no detectable image text aren't re-OCR'd on every load.
+ * Store a page's OCR result { words, lines }. Empty results are cached too, so
+ * pages with no detectable image text aren't re-OCR'd on every load.
  */
-export async function setCachedPage(docId, pageNum, words) {
+export async function setCachedPage(docId, pageNum, { words, lines }) {
   try {
     const db = await openDB();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, "readwrite");
-      tx.objectStore(STORE).put({ words, ts: Date.now(), v: FORMAT_VER }, keyFor(docId, pageNum));
+      tx.objectStore(STORE).put({ words, lines, ts: Date.now(), v: FORMAT_VER }, keyFor(docId, pageNum));
       tx.oncomplete = () => resolve();
       tx.onerror    = () => reject(tx.error);
     });

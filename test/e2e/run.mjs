@@ -13,7 +13,12 @@
 //
 // Fixtures are US Letter pages rendered at 300 DPI and saved as image-only
 // PDFs (no text layer), like a scanner produces; locked/owner.pdf are a.pdf
-// with an open password / permissions-only password.
+// with an open password / permissions-only password. not-words.pdf has "Not"
+// 17 times in hard spots (line ends, punctuation, a table, buttons, small
+// print, italics); screenshot-page.pdf mixes real text with a screenshot that
+// has a white-on-dark button; chart-slide.pdf is a 16:9 slide whose chart
+// image has a sideways axis title and SDG-style tiles of small white capitals
+// on colour.
 
 import { spawn, execSync } from "node:child_process";
 import http from "node:http";
@@ -55,7 +60,7 @@ const server = http.createServer((req, res) => {
   };
   const u = decodeURIComponent(req.url.split("?")[0]);
   if (u === "/page.html") return html("<h1>Not a PDF</h1>");
-  if (["/a.pdf", "/c.pdf", "/locked.pdf", "/owner.pdf"].includes(u)) return pdf(u.slice(1));
+  if (["/a.pdf", "/c.pdf", "/locked.pdf", "/owner.pdf", "/not-words.pdf", "/screenshot-page.pdf", "/chart-slide.pdf"].includes(u)) return pdf(u.slice(1));
   if (u === "/files/Quarterly Report") return pdf("a.pdf"); // no .pdf in the URL
   if (u === "/latest.pdf") return pdf(latest);
   if (u === "/private/doc") {
@@ -190,6 +195,8 @@ try {
   };
 
   // Read a copy's bytes out of Cache Storage and extract its text layer.
+  // `spaces` counts the space characters actually written between words:
+  // without them Chrome's PDF engine glues neighbouring words together.
   const copyText = async (copyUrl) => {
     const b64 = await evalSW(`
       const key = "https://find-in-images.invalid" + new URL(${J(copyUrl)}).pathname;
@@ -201,21 +208,31 @@ try {
       data: new Uint8Array(Buffer.from(b64, "base64")),
       standardFontDataUrl: path.join(REPO, "node_modules/pdfjs-dist/standard_fonts/"),
     }).promise;
-    let text = "";
+    let text = "", spaces = 0;
     for (let p = 1; p <= doc.numPages; p++) {
-      text += (await (await doc.getPage(p)).getTextContent()).items.map((i) => i.str).join(" ") + " ";
+      const page = await doc.getPage(p);
+      text += (await page.getTextContent()).items.map((i) => i.str).join(" ") + " ";
+      const ops = await page.getOperatorList();
+      ops.fnArray.forEach((fn, i) => {
+        if (fn === pdfjs.OPS.showText) spaces += ops.argsArray[i][0].filter((g) => g && g.unicode === " ").length;
+      });
     }
-    return { text: text.replace(/\s+/g, " "), pages: doc.numPages };
+    return { text: text.replace(/\s+/g, " "), pages: doc.numPages, spaces };
   };
+  const wholeWord = (text, word) => (text.match(new RegExp(`\\b${word}\\b`, "gi")) || []).length;
 
   // The keyboard shortcut is actually assigned (Chrome silently leaves a
   // suggested key unset when it clashes, e.g. Cmd+Shift+F on Mac)
+  let shortcut = "";
   {
     const cmds = await evalSW(`return await chrome.commands.getAll();`);
     const cmd = cmds.find((c) => c.name === "toggle-search");
     shortcut = (cmd && cmd.shortcut) || "";
     check("keyboard shortcut is assigned", !!shortcut, cmd ? `"${shortcut}"` : J(cmds));
   }
+  // Tooltips name this platform's keys: Chrome's find is ⌘F on Mac, where
+  // Ctrl+F does nothing.
+  const findKey = process.platform === "darwin" ? "⌘F" : "Ctrl+F";
 
   // Non-PDF page → clear error, no swap
   {
@@ -224,15 +241,11 @@ try {
     const r = await waitResult(id, 20000);
     check("non-PDF page reports an error", !!r.error && /isn't a PDF/.test(r.error), r.error);
   }
-  let shortcut = "";
 
   // Scanned PDF → OCR, swap in the native viewer, searchable, same tab title
   let firstOcrMs;
   {
     const id = await openTab(`${BASE}/a.pdf`);
-  // Tooltips name this platform's keys: Chrome's find is ⌘F on Mac, where
-  // Ctrl+F does nothing.
-  const findKey = process.platform === "darwin" ? "⌘F" : "Ctrl+F";
     const before = await tab(id);
     await trigger(id);
     const r = await waitResult(id);
@@ -248,6 +261,8 @@ try {
       await sleep(700);
       const b = await badgeOf(id);
       check("success badge shown after the copy loads", b.text === "✓" && b.title.includes("words added"), b.title);
+      check("…and names this platform's find key and the shortcut",
+        b.title.includes(`Press ${findKey} to search`) && b.title.includes(`${shortcut} or click this icon`), b.title);
 
       await evalSW(`await chrome.tabs.reload(${id}); return 1;`);
       await sleep(2000);
@@ -261,8 +276,6 @@ try {
   }
 
   // PDF URL without ".pdf" → processed; same bytes reuse the content-hash OCR cache
-      check("…and names this platform's find key and the shortcut",
-        b.title.includes(`Press ${findKey} to search`) && b.title.includes(`${shortcut} or click this icon`), b.title);
   {
     const id = await openTab(`${BASE}/files/Quarterly%20Report`);
     const before = await tab(id);
@@ -348,6 +361,50 @@ try {
         const b = await badgeOf(t.id);
         check("local file without file access gives guidance", b.text === "!" && /file URLs/.test(b.title), b.title);
       }
+    }
+  }
+
+  // Hard spots: words at line ends and before punctuation, table cells, text on
+  // buttons, small print, italics — and real spaces between the words
+  {
+    const id = await openTab(`${BASE}/not-words.pdf`);
+    await trigger(id);
+    const r = await waitResult(id);
+    check("page with 17 \"Not\"s is processed", !!r.copy, r.error || `${r.ms} ms`);
+    if (r.copy) {
+      const { text, spaces } = await copyText(r.copy);
+      check("…at least 16 of the 17 are found as whole words", wholeWord(text, "not") >= 16, `${wholeWord(text, "not")} found`);
+      check("…including the table header behind its border", /Status Not started Owner/.test(text), brief(text));
+      check("…and real spaces are written between words", spaces >= 60, `${spaces} spaces`);
+    }
+  }
+
+  // Real text + a screenshot with a white-on-dark button
+  {
+    const id = await openTab(`${BASE}/screenshot-page.pdf`);
+    await trigger(id);
+    const r = await waitResult(id);
+    check("page with a screenshot is processed", !!r.copy, r.error || `${r.ms} ms`);
+    if (r.copy) {
+      const { text } = await copyText(r.copy);
+      check("…text in the screenshot is added", /Email alerts:? Not enabled/.test(text) && /Not found/.test(text), brief(text));
+      check("…white text on a dark button is found", /Not now/.test(text), brief(text));
+      check("…real text isn't duplicated", wholeWord(text, "refreshed") === 1, brief(text));
+    }
+  }
+
+  // A lecture slide: white capitals on coloured tiles and a sideways axis title
+  {
+    const id = await openTab(`${BASE}/chart-slide.pdf`);
+    await trigger(id);
+    const r = await waitResult(id);
+    check("chart slide is processed", !!r.copy, r.error || `${r.ms} ms`);
+    if (r.copy) {
+      const { text } = await copyText(r.copy);
+      const tiles = ["ZERO", "HUNGER", "CLIMATE", "ACTION", "REDUCED", "INEQUALITIES", "SUSTAINABLE", "COMMUNITIES", "EDUCATION"];
+      const found = tiles.filter((t) => new RegExp(`\\b${t}\\b`).test(text));
+      check("…white capitals on coloured tiles are read", found.length >= 8, `${found.length}/${tiles.length}: ${brief(text)}`);
+      check("…the sideways axis title is read", /Heat content anomaly/.test(text), brief(text));
     }
   }
 

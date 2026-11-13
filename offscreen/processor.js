@@ -15,8 +15,8 @@
 import * as pdfjsLib from "../lib/pdfjs/pdf.min.mjs";
 import { getCachedPage, setCachedPage, hashBytes } from "./cache.js";
 import { postProcessWords } from "./ocr-postprocess.js";
-import { renderOCRCanvas, recognize, OCR_WORKERS } from "./ocr.js";
-import { embedWords } from "./embed.js";
+import { ocrPage, OCR_WORKERS } from "./ocr.js";
+import { embedLines } from "./embed.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("../lib/pdfjs/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -158,45 +158,38 @@ async function processPage(pdfDoc, libDoc, font, pageNum, docId, lang, PDFLib) {
 
   // Cached OCR results are normalized (0..1 of the rendered page) so they're
   // scale-independent. docId = content hash + language.
-  let normWords = await getCachedPage(docId, pageNum);
+  let ocr = await getCachedPage(docId, pageNum);
 
-  if (!normWords) {
-    const { canvas } = await renderOCRCanvas(page);
-    const w = canvas.width, h = canvas.height;
-    const raw = await recognize(canvas, lang);
-    canvas.width = canvas.height = 0; // release the large backing store
+  if (!ocr) {
+    const raw = await ocrPage(page, lang);
     if (!raw) return 0;
-    const words = postProcessWords(raw);
-    normWords = words.map((wd) => ({
-      text: wd.text,
-      variant: wd.variant,
-      bbox: { x0: wd.bbox.x0 / w, y0: wd.bbox.y0 / h, x1: wd.bbox.x1 / w, y1: wd.bbox.y1 / h },
-    }));
-    await setCachedPage(docId, pageNum, normWords);
+    ocr = {
+      words: postProcessWords(raw.words).map((wd) => ({
+        text: wd.text, variant: wd.variant, line: wd.line, bbox: wd.bbox,
+      })),
+      lines: raw.lines,
+    };
+    await setCachedPage(docId, pageNum, ocr);
   }
-  if (!normWords.length) return 0;
+  if (!ocr.words.length) return 0;
 
   // In the DOM viewer, misread words got an extra invisible "search variant"
   // (he11o → hello). In a real PDF both copies would pollute selection and
   // double native-find counts, so embed a single form — the corrected one,
   // since it's what the visible image most likely says.
-  const chosen = preferCorrected(normWords);
+  const chosen = preferCorrected(ocr.words);
 
-  // Map normalized visual coords → PDF user space (rotation-aware via the
-  // viewport inverse), and drop words PDF.js already provides as real text.
+  // Map each OCR line into PDF user space (rotation-aware via the viewport
+  // inverse), and drop words PDF.js already provides as real text.
   const vp = page.getViewport({ scale: 1.0 });
-  const pdfWords = [];
-  for (const wd of chosen) {
-    const pw = toPdfWord(wd, vp);
-    if (!pw) continue;
-    if (isNativeDuplicate(pw, nativeBoxes)) continue;
-    pdfWords.push(pw);
-  }
-  if (!pdfWords.length) return 0;
+  const pdfLines = toPdfLines(chosen, ocr.lines, vp)
+    .map((ln) => ({ ...ln, words: ln.words.filter((pw) => !isNativeDuplicate(pw, nativeBoxes)) }))
+    .filter((ln) => ln.words.length);
+  if (!pdfLines.length) return 0;
 
   const libPage = libDoc.getPage(pageNum - 1);
   const fontKey = libPage.node.newFontDictionary(font.name, font.ref);
-  return embedWords(PDFLib, libPage, font, fontKey, pdfWords);
+  return embedLines(PDFLib, libPage, font, fontKey, pdfLines);
 }
 
 // Collapse {raw, variant} pairs (same bbox) to just the corrected variant.
@@ -207,10 +200,10 @@ function preferCorrected(words) {
     if (w.variant) continue; // handled when its raw twin is visited
     const nxt = words[i + 1];
     if (nxt && nxt.variant && sameBox(w.bbox, nxt.bbox)) {
-      out.push({ text: nxt.text, bbox: w.bbox });
+      out.push({ text: nxt.text, bbox: w.bbox, line: w.line });
       i++; // skip the variant entry
     } else {
-      out.push({ text: w.text, bbox: w.bbox });
+      out.push({ text: w.text, bbox: w.bbox, line: w.line });
     }
   }
   return out;
@@ -221,40 +214,72 @@ function sameBox(a, b) {
 }
 
 /**
- * Convert one normalized visual-space word to PDF user space.
+ * Group words by OCR line and map each line to PDF user space.
  *
- * The OCR bbox lives in the rendered (possibly rotated) page image; mapping
- * its baseline endpoints through viewport.convertToPdfPoint handles rotation
- * and origin flips in one place. Font size comes from the mapped box height,
- * the baseline angle from the mapped endpoints.
+ * All words on a line share the line's baseline and one font size, and are
+ * later written with real space characters between them. Positioning each word
+ * on its own (as before) gave every word a different baseline and size, and
+ * Chrome's PDF engine then often saw no gap between words ("orNot itrains") or
+ * a line break inside a line — so searches containing spaces failed.
+ *
+ * The OCR boxes live in the rendered (possibly rotated) page image; mapping
+ * points through viewport.convertToPdfPoint handles rotation and origin flips.
+ * Lines read from the page turned a quarter clockwise (dir: 1, e.g. a chart's
+ * y-axis title) have their coordinates in that turned page; mapping them back
+ * first makes the same maths produce text running bottom-to-top.
+ *
+ * Returns [{ size, words: [{ text, x, y, ex, ey, w, angle, cx, cy }] }] where
+ * (x,y)→(ex,ey) is the word's baseline in PDF space.
  */
-function toPdfWord(word, vp) {
-  const { x0, y0, x1, y1 } = word.bbox;
-  const w = x1 - x0, h = y1 - y0;
-  if (w <= 0 || h <= 0) return null;
-
+function toPdfLines(words, lines, vp) {
   const W = vp.width, H = vp.height;
-  const baseY = (y0 + 0.8 * h) * H; // baseline ≈ 80% down the box
+  const upright = (x, y) => vp.convertToPdfPoint(x * W, y * H);
+  const turned = (x, y) => upright(y, 1 - x); // turned-page (x, y) → page
+  const byLine = new Map();
+  for (const wd of words) {
+    if (!(wd.bbox.x1 > wd.bbox.x0) || !(wd.bbox.y1 > wd.bbox.y0)) continue;
+    if (!byLine.has(wd.line)) byLine.set(wd.line, []);
+    byLine.get(wd.line).push(wd);
+  }
 
-  const [sx, sy] = vp.convertToPdfPoint(x0 * W, baseY);
-  const [ex, ey] = vp.convertToPdfPoint(x1 * W, baseY);
-  const [tx, ty] = vp.convertToPdfPoint(x0 * W, y0 * H);
-  const [bx, by] = vp.convertToPdfPoint(x0 * W, y1 * H);
+  const out = [];
+  for (const [index, lineWords] of byLine) {
+    lineWords.sort((a, b) => a.bbox.x0 - b.bbox.x0);
+    const line = lines[index];
+    const pt = line && line.dir === 1 ? turned : upright;
+    const top = Math.min(...lineWords.map((w) => w.bbox.y0));
+    const bottom = Math.max(...lineWords.map((w) => w.bbox.y1));
+    // Baseline: Tesseract's per-line baseline when it has one; otherwise 80%
+    // down the line's words (the old per-word estimate, applied per line).
+    const bl = line && line.baseline;
+    const baseY = bl
+      ? (x) => bl.y0 + ((bl.y1 - bl.y0) * (x - bl.x0)) / (bl.x1 - bl.x0)
+      : () => top + 0.8 * (bottom - top);
 
-  const width  = Math.hypot(ex - sx, ey - sy);
-  const height = Math.hypot(bx - tx, by - ty);
-  if (width <= 0 || height <= 0) return null;
+    // Font size = the line's height, so the highlight covers ascenders and
+    // descenders of the visible words.
+    const x0 = lineWords[0].bbox.x0;
+    const [tx, ty] = pt(x0, top);
+    const [bx, by] = pt(x0, bottom);
+    const size = Math.hypot(bx - tx, by - ty);
+    if (!(size > 0)) continue;
 
-  return {
-    text: word.text,
-    x: sx,
-    y: sy,
-    w: width,
-    h: height,
-    angle: Math.atan2(ey - sy, ex - sx),
-    cx: (sx + ex) / 2, // baseline midpoint, used for native-text dedup
-    cy: (sy + ey) / 2,
-  };
+    const mapped = [];
+    for (const wd of lineWords) {
+      const [sx, sy] = pt(wd.bbox.x0, baseY(wd.bbox.x0));
+      const [ex, ey] = pt(wd.bbox.x1, baseY(wd.bbox.x1));
+      const w = Math.hypot(ex - sx, ey - sy);
+      if (!(w > 0)) continue;
+      mapped.push({
+        text: wd.text, x: sx, y: sy, ex, ey, w,
+        angle: Math.atan2(ey - sy, ex - sx),
+        cx: (sx + ex) / 2, // baseline midpoint, used for native-text dedup
+        cy: (sy + ey) / 2,
+      });
+    }
+    if (mapped.length) out.push({ size, words: mapped });
+  }
+  return out;
 }
 
 // ── Native PDF text (for dedup) ──────────────────────────────────────────────
